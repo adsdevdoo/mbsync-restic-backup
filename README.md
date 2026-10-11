@@ -200,6 +200,9 @@ Mount a node_exporter textfile collector directory at `/metrics` (see `compose.y
 | `mail_backup_unfetchable_messages`, `mail_backup_parked_folders` | refused letters, parked folders |
 | `mail_backup_copy_last_success_timestamp_seconds`, `…_copy_last_failure_…` | off-host copy |
 
+A Grafana dashboard for these metrics: `grafana/mail-backup.json` (Dashboards → New → Import; pick your Prometheus
+data source). It shows the last run, letters, sizes, refused letters, parked folders and the off-host copy.
+
 Useful alerts:
 - no success for 26 hours: `time() - mail_backup_last_success_timestamp_seconds > 26*3600`;
 - the last run failed: failure newer than success;
@@ -236,6 +239,7 @@ organization and the mailbox, app password.
 | `entrypoint.sh` | writes the crontab from `SCHEDULE` and starts supercronic |
 | `Dockerfile` | Alpine with isync, restic, supercronic, rsync |
 | `compose.yml`, `.env.example` | how to run it |
+| `grafana/mail-backup.json` | Grafana dashboard for the metrics |
 | `tests/test.sh` | tests against a stub mbsync, no mailbox needed: `sh tests/test.sh` (Docker; the first build downloads Alpine packages) |
 | `CLAUDE.md` | rules for changing the code, and what we learned about mbsync and Yandex 360 |
 
