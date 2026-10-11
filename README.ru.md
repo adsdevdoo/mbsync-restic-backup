@@ -3,8 +3,12 @@
 [![build](https://github.com/adsdevdoo/mbsync-restic-backup/actions/workflows/build.yml/badge.svg)](https://github.com/adsdevdoo/mbsync-restic-backup/actions/workflows/build.yml)
 [![ghcr.io](https://img.shields.io/badge/ghcr.io-adsdevdoo%2Fmbsync--restic--backup-blue?logo=github)](https://github.com/adsdevdoo/mbsync-restic-backup/pkgs/container/mbsync-restic-backup)
 [![Docker Hub](https://img.shields.io/docker/v/adsdevdoo/mbsync-restic-backup?sort=semver&logo=docker&label=docker%20hub)](https://hub.docker.com/r/adsdevdoo/mbsync-restic-backup)
+[![Docker pulls](https://img.shields.io/docker/pulls/adsdevdoo/mbsync-restic-backup?logo=docker)](https://hub.docker.com/r/adsdevdoo/mbsync-restic-backup)
+[![image size](https://img.shields.io/docker/image-size/adsdevdoo/mbsync-restic-backup/latest?logo=docker)](https://hub.docker.com/r/adsdevdoo/mbsync-restic-backup)
+![platforms](https://img.shields.io/badge/platforms-amd64%20%7C%20arm64-lightgrey)
 [![release](https://img.shields.io/github/v/release/adsdevdoo/mbsync-restic-backup?sort=semver)](https://github.com/adsdevdoo/mbsync-restic-backup/releases)
 [![license](https://img.shields.io/github/license/adsdevdoo/mbsync-restic-backup)](LICENSE)
+[![last commit](https://img.shields.io/github/last-commit/adsdevdoo/mbsync-restic-backup)](https://github.com/adsdevdoo/mbsync-restic-backup/commits/main)
 
 [English](README.md) | **Русский**
 

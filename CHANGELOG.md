@@ -7,6 +7,9 @@ on (settings, data layout, metric names).
 
 ## [Unreleased]
 
+### Changed
+- `README.ru.md` has all the badges of `README.md`.
+
 ## [1.0.1] - 2026-10-11
 
 ### Added
