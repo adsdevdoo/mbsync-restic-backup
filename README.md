@@ -227,6 +227,8 @@ Useful alerts:
 | `entrypoint.sh` | writes the crontab from `SCHEDULE` and starts supercronic |
 | `Dockerfile` | Alpine with isync, restic, supercronic, rsync |
 | `compose.yml`, `.env.example` | how to run it |
+| `tests/test.sh` | offline tests against a stub mbsync (Docker, no network): `sh tests/test.sh` |
+| `CLAUDE.md` | rules for changing the code, and what we learned about mbsync and Yandex 360 |
 
 Inside `DATA_DIR`:
 
