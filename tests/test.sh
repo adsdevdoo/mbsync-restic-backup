@@ -16,6 +16,7 @@ cleanup() {
     rmdir "$d" 2>/dev/null
 }
 trap cleanup EXIT
+trap 'exit 130' INT TERM
 mkdir -p "$d/data" "$d/secrets" "$d/metrics" "$d/bin"
 echo fake >"$d/secrets/imap_password"
 head -c 32 /dev/urandom | base64 >"$d/secrets/restic_password"
@@ -39,6 +40,7 @@ sum() { echo "Channels: 1    Boxes: 2"; }
 state() { printf 'FarUidValidity 1\nNearUidValidity 2\nMaxPulledUid 5000\nMaxPushedUid 9\n\n612 590 S\n' >/data/maildir/INBOX/.mbsyncstate; }
 case $s in
   refused) box INBOX; state; fail 613; fail 800; box Other; other 9; sum; exit 1;;
+  rewound) echo "STATE $(grep MaxPulledUid /data/maildir/INBOX/.mbsyncstate)"; box INBOX; sum; exit 0;;
   retry)
     echo "STATE $(grep MaxPulledUid /data/maildir/INBOX/.mbsyncstate)"
     box INBOX; fail 613; echo "800 700 S" >>/data/maildir/INBOX/.mbsyncstate; box Other; sum; exit 1;;
@@ -88,13 +90,15 @@ check() {
 docker run --rm --network none $V "$IMG" backup.sh init >/dev/null || { echo "init failed"; FAILED=$((FAILED + 1)); }
 check "refused letters do not fail the run"   0 'all folders done; 3 refused'         refused ""
 # Needs the list and the INBOX state the previous scenario left.
-check "retry rewinds and records recovery"    0 'STATE MaxPulledUid 612;;1 letters .* came through' retry retry "" keep
+check "retry rewinds and records recovery"    0 'STATE MaxPulledUid 612;;: 1 letters .* came through' retry retry "" keep
 check "dropped session, second attempt ok"    0 'attempt 2 of 3'                      byeok   ""
 check "real error fails the run"              1 'mbsync failed'                       realerr ""
 check "killed mbsync fails the run"           1 'mbsync failed'                       killed  ""
 check "stalled folder gets parked"            0 'parked Bad Box'                      stall   ""
 check "INBOX is never parked"                 1 'INBOX is never parked'               inbox   ""
-check "rewind-all runs"                       0 'MaxPulledUid set to 0'               refused rewind-all
+check "refused letters again (for rewind-all)" 0 'all folders done; 3 refused'        refused ""
+# Needs the INBOX state the previous scenario left (the Other folder has none).
+check "rewind-all rewinds every state"        0 'MaxPulledUid set to 0 in 1 folders;;STATE MaxPulledUid 0' rewound rewind-all "" keep
 check "unknown command"                       2 'unknown command'                     refused bogus
 check "REFUSED_PATTERN mismatch fails"        1 'mbsync failed'                       refused "" "-e REFUSED_PATTERN=\\[UNAVAILABLE\\]"
 check "REFUSED_MAX exceeded fails"            1 'more than REFUSED_MAX'               refused "" "-e REFUSED_MAX=1"
