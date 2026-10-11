@@ -825,12 +825,495 @@
   },
   {
    "type": "row",
-   "title": "Trends",
+   "title": "Folders",
    "id": 27,
    "collapsed": false,
    "gridPos": {
     "x": 0,
     "y": 10,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "stat",
+   "title": "On the server",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 28,
+   "gridPos": {
+    "x": 0,
+    "y": 11,
+    "w": 6,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "sum(max by (folder) (mail_backup_folder_server_messages))",
+     "legendFormat": "",
+     "refId": "D"
+    }
+   ],
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "—"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Here",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 30,
+   "gridPos": {
+    "x": 6,
+    "y": 11,
+    "w": 6,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "sum(max by (folder) (mail_backup_folder_letters) and max by (folder) (mail_backup_folder_server_messages))",
+     "legendFormat": "",
+     "refId": "F"
+    }
+   ],
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "—"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Not downloaded yet",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 32,
+   "gridPos": {
+    "x": 12,
+    "y": 11,
+    "w": 6,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "sum(clamp_min(max by (folder) (mail_backup_folder_server_messages) - max by (folder) (mail_backup_folder_letters), 0))",
+     "legendFormat": "",
+     "refId": "H"
+    }
+   ],
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "—"
+    },
+    "overrides": []
+   },
+   "description": "On the server minus here, per folder, refused letters included. Letters deleted on the server stay here, so this can read lower than what is really missing."
+  },
+  {
+   "type": "stat",
+   "title": "Folders not complete",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 34,
+   "gridPos": {
+    "x": 18,
+    "y": 11,
+    "w": 6,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "count((max by (folder) (mail_backup_folder_server_messages) - max by (folder) (mail_backup_folder_letters)) > 0) or vector(0)",
+     "legendFormat": "",
+     "refId": "J"
+    }
+   ],
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "—"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "table",
+   "title": "Folders",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 36,
+   "gridPos": {
+    "x": 0,
+    "y": 15,
+    "w": 24,
+    "h": 12
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max by (folder) (mail_backup_folder_server_messages)",
+     "legendFormat": "",
+     "refId": "A",
+     "instant": true,
+     "range": false,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max by (folder) (mail_backup_folder_letters)",
+     "legendFormat": "",
+     "refId": "B",
+     "instant": true,
+     "range": false,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "clamp_min(max by (folder) (mail_backup_folder_server_messages) - max by (folder) (mail_backup_folder_letters), 0)",
+     "legendFormat": "",
+     "refId": "C",
+     "instant": true,
+     "range": false,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max by (folder) (mail_backup_folder_refused)",
+     "legendFormat": "",
+     "refId": "D",
+     "instant": true,
+     "range": false,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max by (folder) (mail_backup_folder_parked)",
+     "legendFormat": "",
+     "refId": "E",
+     "instant": true,
+     "range": false,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "merge",
+     "options": {}
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "indexByName": {
+       "folder": 0,
+       "Value #A": 1,
+       "Value #B": 2,
+       "Value #C": 3,
+       "Value #D": 4,
+       "Value #E": 5
+      },
+      "renameByName": {
+       "folder": "Folder",
+       "Value #A": "On the server",
+       "Value #B": "Here",
+       "Value #C": "Not downloaded",
+       "Value #D": "Refused",
+       "Value #E": "Parked"
+      }
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "sortBy": [
+     {
+      "displayName": "Not downloaded",
+      "desc": true
+     }
+    ]
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "cellOptions": {
+       "type": "auto"
+      }
+     },
+     "unit": "locale"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Not downloaded"
+      },
+      "properties": [
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "green",
+           "value": null
+          },
+          {
+           "color": "yellow",
+           "value": 1
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Refused"
+      },
+      "properties": [
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "text",
+           "value": null
+          },
+          {
+           "color": "yellow",
+           "value": 1
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Parked"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "0": {
+            "text": ""
+           },
+           "1": {
+            "text": "parked",
+            "color": "orange"
+           }
+          }
+         }
+        ]
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "type": "row",
+   "title": "Trends",
+   "id": 42,
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 27,
     "w": 24,
     "h": 1
    },
@@ -843,10 +1326,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 29,
+   "id": 44,
    "gridPos": {
     "x": 0,
-    "y": 11,
+    "y": 28,
     "w": 12,
     "h": 8
    },
@@ -858,7 +1341,7 @@
      },
      "expr": "max(mail_backup_letters)",
      "legendFormat": "letters",
-     "refId": "C"
+     "refId": "R"
     }
    ],
    "options": {
@@ -908,10 +1391,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 31,
+   "id": 46,
    "gridPos": {
     "x": 12,
-    "y": 11,
+    "y": 28,
     "w": 12,
     "h": 8
    },
@@ -923,7 +1406,7 @@
      },
      "expr": "clamp_min(deriv(max(mail_backup_letters)[15m:1m]) * 60, 0)",
      "legendFormat": "letters/min",
-     "refId": "E"
+     "refId": "T"
     }
    ],
    "options": {
@@ -974,10 +1457,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 34,
+   "id": 49,
    "gridPos": {
     "x": 0,
-    "y": 19,
+    "y": 36,
     "w": 24,
     "h": 8
    },
@@ -989,7 +1472,7 @@
      },
      "expr": "max(mail_backup_maildir_bytes)",
      "legendFormat": "Maildir",
-     "refId": "G"
+     "refId": "V"
     },
     {
      "datasource": {
@@ -998,7 +1481,7 @@
      },
      "expr": "max(mail_backup_repository_bytes)",
      "legendFormat": "repository",
-     "refId": "H"
+     "refId": "W"
     }
    ],
    "options": {
@@ -1048,10 +1531,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 36,
+   "id": 51,
    "gridPos": {
     "x": 0,
-    "y": 27,
+    "y": 44,
     "w": 12,
     "h": 8
    },
@@ -1063,7 +1546,7 @@
      },
      "expr": "max(mail_backup_unfetchable_messages)",
      "legendFormat": "refused",
-     "refId": "J"
+     "refId": "Y"
     }
    ],
    "options": {
@@ -1113,10 +1596,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 38,
+   "id": 53,
    "gridPos": {
     "x": 12,
-    "y": 27,
+    "y": 44,
     "w": 12,
     "h": 8
    },
@@ -1128,7 +1611,7 @@
      },
      "expr": "max(mail_backup_parked_folders)",
      "legendFormat": "parked",
-     "refId": "L"
+     "refId": "A"
     }
    ],
    "options": {

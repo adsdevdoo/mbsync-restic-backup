@@ -32,12 +32,15 @@
 # as come through once the folder state has a record for it. Not done in the nightly run: a block of letters the
 # server keeps refusing would eat every nightly session.
 #
-# Parked folders. Until a folder is done, every attempt asks again for its refused letters from the lowest UID. If
-# the server refuses a block longer than a session lasts, the folder never gets done. A folder is parked (left out
-# of mbsync) when PARK_AFTER attempts in a row (2 by default, or 1) were cut off in it with at least PARK_FAILURES
+# Big folders. mbsync writes a folder's state only when it finishes the folder. A folder too big for one session
+# never finishes, and every attempt asks again, from the lowest UID, for all the letters refused before. After an
+# attempt cut off in a folder, checkpoint_state does what mbsync does at the end of a folder: folds the journal into
+# the state and moves MaxPulledUid up to where the attempt got to. The next attempt goes on from there.
+#
+# Parked folders, a fallback for a cut-off folder no checkpoint could be written for. It is parked (left out of
+# mbsync) when PARK_AFTER attempts in a row (2 by default, or 1) were cut off in it with at least PARK_FAILURES
 # refused letters and more than PARK_RATIO times as many as letters stored from it in that attempt. NEVER_PARK
-# folders are not parked: the run fails instead. The folder keeps its journal; remove its line from PARKED_LIST to
-# take it back.
+# folders are not parked: the run fails instead. Remove its line from PARKED_LIST to take it back.
 #
 set -euo pipefail
 # The Maildir is plain text mail: readable by root only.
@@ -99,6 +102,10 @@ UNFETCHABLE_LIST="$STATE_DIR/unfetchable.tsv"
 RECOVERED_LIST="$STATE_DIR/unfetchable-recovered.tsv"
 # Parked folders, one per line.
 PARKED_LIST="$STATE_DIR/parked.txt"
+# Letters on the server per folder at the start of the last run: folder <TAB> messages (IMAP STATUS).
+FOLDER_COUNTS="$STATE_DIR/folders.tsv"
+# The folders mbsync lists, one per line (this run).
+FOLDER_LIST="/tmp/mbsync-folders"
 # The last stalled attempt per folder, waiting for a second one (PARK_AFTER=2): folder <TAB> refused letters.
 STALL_FILE="$STATE_DIR/stall.tsv"
 LOCK_FILE="/data/.backup.lock"
@@ -108,6 +115,8 @@ MBSYNC_LOG="/data/.mbsync-last.log"
 MBSYNC_RC_FILE="/tmp/mbsyncrc"
 # Touched before each attempt: letters stored in it are the files changed after this.
 ATTEMPT_MARK="/tmp/mbsync-attempt.mark"
+# The last journal folded by a checkpoint, per folder; not in the snapshots.
+JOURNAL_BACKUP_DIR="/data/.journals"
 # node_exporter textfile collector; nothing is written when it is not mounted.
 METRICS_DIR="/metrics"
 
@@ -234,10 +243,12 @@ sync_mail() {
 
     mkdir -p "$MAILDIR" "$STATE_DIR"
     # Leftovers of a killed run (the lock is ours).
-    rm -f "$STATE_DIR"/*.tmp.* "$MBSYNC_LOG".g* "$MBSYNC_RC_FILE".* "$METRICS_DIR"/.mail_backup_*
+    rm -f "$STATE_DIR"/*.tmp.* "$MBSYNC_LOG".g* "$MBSYNC_RC_FILE".* "$METRICS_DIR"/.mail_backup_* /tmp/netrc.* /tmp/curl.*
     : >"$MBSYNC_LOG"
     touch "$PARKED_LIST" "$STALL_FILE" || return 1
 
+    list_folders || true
+    count_server_messages || log "mbsync: could not get the message counts from the server; the per-folder counts keep the last ones"
     plan_groups
     n=${#GROUP_PATTERNS[@]}
     if (( PROGRESS_INTERVAL > 0 )); then
@@ -276,10 +287,17 @@ sync_mail() {
                 done < <(gawk '/^Opening far side box / { b = $0; sub(/^Opening far side box /, "", b); sub(/\.\.\.$/, "", b); print b }' "$glog" | sort -u)
                 continue
             fi
-            check_stall "$glog" || log "ERROR: could not check session $((i + 1)) for a stalled folder."
             # Only a dropped connection is worth another attempt; any other error would just repeat.
             if grep -qE "$CONNECTION_DROP" "$glog"; then
                 more=yes
+                # The folder it was cut off in: a checkpoint, so the next attempt goes on from there; parking only
+                # when that cannot be done.
+                f="$(cut_folder "$glog")" || f=""
+                if [[ -n "$f" ]] && checkpoint_state "$f"; then
+                    stall_set "$f"
+                else
+                    check_stall "$glog" || log "ERROR: could not check session $((i + 1)) for a stalled folder."
+                fi
             else
                 state[i]=failed
             fi
@@ -342,21 +360,140 @@ pending_groups() {
 }
 
 
+# list_folders : FOLDER_LIST gets every folder mbsync lists on the server (parked ones too, EXTRA_PATTERNS applied),
+# one per line, in mbsync's names (UTF-8, / between levels). Empty when the list cannot be had.
+list_folders() {
+    : >"$FOLDER_LIST"
+    build_mbsyncrc "$MBSYNC_RC_FILE.list" "*" all || return 1
+    # A list from a failed mbsync is not used.
+    if ! mbsync -c "$MBSYNC_RC_FILE.list" -l mail >"$FOLDER_LIST.all" 2>/dev/null; then
+        rm -f "$FOLDER_LIST.all"
+        return 1
+    fi
+    gawk 'NF' "$FOLDER_LIST.all" >"$FOLDER_LIST" || : >"$FOLDER_LIST"
+    rm -f "$FOLDER_LIST.all"
+    [[ -s "$FOLDER_LIST" ]]
+}
+
+
+# count_server_messages : FOLDER_COUNTS gets the number of letters on the server in every folder of FOLDER_LIST,
+# by IMAP STATUS over one connection (curl, one request per folder). mbsync names are turned back into the
+# server's: its hierarchy delimiter instead of /, modified UTF-7 (RFC 3501) instead of UTF-8. The password goes to
+# curl in a netrc file readable by root only, never on a command line. FOLDER_COUNTS is replaced only on success.
+count_server_messages() {
+    local netrc cfg answers delim pass user rc=0
+
+    [[ -s "$FOLDER_LIST" ]] || return 1
+    netrc="$(mktemp /tmp/netrc.XXXXXX)" || return 1
+    cfg="$(mktemp /tmp/curl.XXXXXX)" || { rm -f "$netrc"; return 1; }
+    answers="$(mktemp "$STATE_DIR/folders.tmp.XXXXXX")" || { rm -f "$netrc" "$cfg"; return 1; }
+    pass="$(<"$IMAP_PASSWORD_FILE")"
+    user="$IMAP_USER"
+    # netrc strings in double quotes: backslash and quote escaped.
+    pass="${pass//\\/\\\\}"
+    user="${user//\\/\\\\}"
+    printf 'machine %s login "%s" password "%s"\n' "$IMAP_HOST" "${user//\"/\\\"}" "${pass//\"/\\\"}" >"$netrc"
+    pass=""
+
+    # The delimiter: the answer to LIST "" "" is * LIST (...) "<delimiter>" "" (NIL: a flat namespace; a backslash
+    # comes quoted as "\\").
+    delim="$(curl -s --connect-timeout 30 --max-time 60 --netrc-file "$netrc" "imaps://$IMAP_HOST:$IMAP_PORT/" -X 'LIST "" ""' \
+        | tr -d '\r' | sed -nE 's/^\* LIST \([^)]*\) "([\\][\\]|[^\\])".*/\1/p' | head -n 1)" || true
+    [[ "$delim" != '\\' ]] || delim='\'
+
+    # One curl run, one transfer per folder (curl config, "next" between them); curl keeps the connection.
+    # The delimiter through the environment: gawk -v would eat a backslash.
+    D="$delim" LC_ALL=C gawk -v url="imaps://$IMAP_HOST:$IMAP_PORT/" -v netrc="$netrc" -v map="$cfg.map" '
+        BEGIN { for (i = 0; i < 256; i++) ord[sprintf("%c", i)] = i
+                b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+,"
+                delim = ENVIRON["D"] }
+        function flush(    out, i, n, v) {
+            if (nb == 0) return ""
+            out = "&"
+            for (i = 0; i < nb; i += 3) {
+                v = bytes[i] * 65536 + (i + 1 < nb ? bytes[i + 1] : 0) * 256 + (i + 2 < nb ? bytes[i + 2] : 0)
+                out = out substr(b64, int(v / 262144) + 1, 1) substr(b64, int(v / 4096) % 64 + 1, 1)
+                if (i + 1 < nb) out = out substr(b64, int(v / 64) % 64 + 1, 1)
+                if (i + 2 < nb) out = out substr(b64, v % 64 + 1, 1)
+            }
+            nb = 0
+            return out "-"
+        }
+        function unit(u) { bytes[nb++] = int(u / 256); bytes[nb++] = u % 256 }
+        # UTF-8 -> modified UTF-7: printable ASCII as is (& as &-), anything else as base64 of UTF-16BE.
+        function mutf7(s,    out, i, n, c, cp, k) {
+            out = ""; nb = 0; n = length(s)
+            for (i = 1; i <= n; i++) {
+                c = ord[substr(s, i, 1)]
+                if (c >= 32 && c <= 126) { out = out flush() (c == 38 ? "&-" : substr(s, i, 1)); continue }
+                if (c >= 240) { cp = c % 8; k = 3 } else if (c >= 224) { cp = c % 16; k = 2 } else if (c >= 192) { cp = c % 32; k = 1 } else { cp = c; k = 0 }
+                for (; k > 0 && i < n; k--) cp = cp * 64 + ord[substr(s, ++i, 1)] % 64
+                if (cp >= 65536) { cp -= 65536; unit(55296 + int(cp / 1024)); unit(56320 + cp % 1024) } else unit(cp)
+            }
+            return out flush()
+        }
+        function q(s) { gsub(/[\\"]/, "\\\\&", s); return s }
+        {
+            name = $0
+            # As a gsub replacement, & and \ would be special.
+            rep = delim
+            gsub(/[\\&]/, "\\\\&", rep)
+            if (delim != "" && delim != "/") gsub(/\//, rep, name)
+            enc = mutf7(name)
+            print enc "\t" $0 > map
+            # Timeouts are per transfer in curl: in every section.
+            if (NR > 1) print "next"
+            print "url = \"" q(url) "\""
+            print "netrc-file = \"" q(netrc) "\""
+            print "connect-timeout = 30"
+            print "max-time = 60"
+            print "request = \"" q("STATUS \"" q(enc) "\" (MESSAGES)") "\""
+        }' "$FOLDER_LIST" >"$cfg" || rc=1
+
+    # * STATUS <mailbox> (MESSAGES <n>), the mailbox quoted or not; back to the mbsync name through the map. curl
+    # exits with the code of its last transfer only: the answers decide, a folder without one keeps no count.
+    if (( rc == 0 )); then
+        { timeout 900 curl -s -K "$cfg" || true; } | tr -d '\r' | gawk -v map="$cfg.map" '
+            BEGIN { FS = "\t"; while ((getline line < map) > 0) { split(line, a, "\t"); name[a[1]] = a[2] } FS = " " }
+            /^\* STATUS / && match($0, /\(MESSAGES [0-9]+\)/) {
+                n = substr($0, RSTART + 10, RLENGTH - 11)
+                box = substr($0, 10, RSTART - 11)
+                if (box ~ /^".*"$/) { box = substr(box, 2, length(box) - 2); gsub(/\\\\/, "\001", box); gsub(/\\"/, "\"", box); gsub(/\001/, "\\", box) }
+                if (box in name) print name[box] "\t" n
+            }' | sort >"$answers" || rc=1
+    fi
+    rm -f "$netrc" "$cfg" "$cfg.map"
+    if (( rc != 0 )) || [[ ! -s "$answers" ]]; then
+        rm -f "$answers"
+        return 1
+    fi
+    # Folders that got no answer this time keep their last count; folders no longer listed are dropped.
+    touch "$FOLDER_COUNTS"
+    gawk -F'\t' -v OFS='\t' '
+        FILENAME == ARGV[1] { listed[$0] = 1; next }
+        FILENAME == ARGV[2] { now[$1] = $2; print; next }
+        ($1 in listed) && !($1 in now) { print }
+    ' "$FOLDER_LIST" "$answers" "$FOLDER_COUNTS" | sort >"$answers.all" || { rm -f "$answers" "$answers.all"; return 1; }
+    rm -f "$answers"
+    mv "$answers.all" "$FOLDER_COUNTS"
+}
+
+
 # plan_groups : GROUP_PATTERNS, one mbsync Patterns value per session. PARALLEL=1: one session, all folders ("*").
-# Otherwise the folders mbsync lists on the server, parked ones left out, dealt round-robin in listing order (runs
-# of similar folders end up in different sessions). If the list cannot be had, one session. A folder name holding
-# * or % works as a wildcard in Patterns and may match another group's folder: mbsync's folder lock then fails
-# one of the two sessions, visibly.
+# Otherwise the folders in FOLDER_LIST, parked ones left out, dealt round-robin in listing order (runs of similar
+# folders end up in different sessions). If there is no list, one session. A folder name holding * or % works as a
+# wildcard in Patterns and may match another group's folder: mbsync's folder lock then fails one of the two
+# sessions, visibly.
 plan_groups() {
     local names
 
     GROUP_PATTERNS=("*")
     (( PARALLEL > 1 )) || return 0
-    if ! build_mbsyncrc "$MBSYNC_RC_FILE.list" "*" \
-        || ! names="$(mbsync -c "$MBSYNC_RC_FILE.list" -l mail 2>/dev/null)" || [[ -z "$names" ]]; then
+    if [[ ! -s "$FOLDER_LIST" ]]; then
         log "mbsync: could not list the folders; one session this run"
         return 0
     fi
+    names="$(cat "$FOLDER_LIST")"
     mapfile -t GROUP_PATTERNS < <(printf '%s\n' "$names" | P="$PARKED_LIST" N="$PARALLEL" gawk '
         BEGIN { while ((getline f < ENVIRON["P"]) > 0) parked[f] = 1 }
         NF && !($0 in parked) {
@@ -372,12 +509,15 @@ plan_groups() {
 }
 
 
-# build_mbsyncrc <file> <patterns> : writes an mbsync config from the settings; Patterns is <patterns>, then
-# EXTRA_PATTERNS, then !"<folder>" for each parked folder (the last match wins).
+# build_mbsyncrc <file> <patterns> [all] : writes an mbsync config from the settings; Patterns is <patterns>, then
+# EXTRA_PATTERNS, then !"<folder>" for each parked folder (the last match wins). With "all", parked folders are not
+# left out (for listing every folder).
 build_mbsyncrc() {
-    local exclude
+    local exclude=""
 
-    exclude="$(gawk 'NF { gsub(/\\/, "\\\\\\\\"); gsub(/"/, "\\\""); printf " !\"%s\"", $0 }' "$PARKED_LIST")" || return 1
+    if [[ "${3:-}" != all ]]; then
+        exclude="$(gawk 'NF { gsub(/\\/, "\\\\\\\\"); gsub(/"/, "\\\""); printf " !\"%s\"", $0 }' "$PARKED_LIST")" || return 1
+    fi
     cat >"$1" <<EOF
 IMAPAccount remote
 Host $(quote "$IMAP_HOST")
@@ -474,14 +614,20 @@ refused_letters() {
 }
 
 
+# cut_folder <session log> : the folder the session was in when it ended (the last one it opened).
+cut_folder() {
+    gawk '/^Opening far side box / { b = $0; sub(/^Opening far side box /, "", b); sub(/\.\.\.$/, "", b) } END { print b }' "$1"
+}
+
+
 # check_stall <session log> : after a session cut off by a dropped connection, parks the folder it was cut off in
 # when it was stalled there PARK_AFTER times in a row (stall.tsv keeps the last stall per folder, across runs).
+# Only for a folder no checkpoint could be written for.
 check_stall() {
     local box fails stored prev_fails never
 
     grep -qE "$CONNECTION_DROP" "$1" || return 0
-    box="$(gawk '/^Opening far side box / { b = $0; sub(/^Opening far side box /, "", b); sub(/\.\.\.$/, "", b) } END { print b }' "$1")" \
-        || return 1
+    box="$(cut_folder "$1")" || return 1
     [[ -n "$box" ]] || return 0
     if grep -qxF -- "$box" "$PARKED_LIST" 2>/dev/null; then
         return 0
@@ -521,6 +667,140 @@ check_stall() {
         stall_set "$box" "$fails" || return 1
         log "mbsync: attempt stalled in $box ($fails refused, $stored stored); parked if the next one is too"
     fi
+}
+
+
+# checkpoint_state <folder> : after an attempt cut off in <folder>, does what mbsync does when it finishes a folder:
+# folds the journal into the state file and moves MaxPulledUid up to where the attempt got to. Without this a
+# folder too big for one session never gets its state written, and every
+# attempt asks again, from the lowest UID, for all the letters refused before: after a few attempts the whole
+# session goes on old refusals. Kept: the stored letters (pairs) with their flags. Dropped: letters queued but not
+# reached; above MaxPulledUid they count as new and come next time.
+#
+# MaxPulledUid goes up to the end of the unbroken run of letters the attempt dealt with: below the lowest letter still
+# queued, at most the highest stored or failed one (pipelined fetches may be answered out of order). Every letter
+# that failed (refused, or any other failed fetch) up to there is added to UNFETCHABLE_LIST before the state is
+# replaced: mbsync never asks for it again by itself, only retry does. Nothing is written when MaxPulledUid would not
+# move and no letter was stored (a folder the server gives nothing from: parking decides). The old journal goes to
+# JOURNAL_BACKUP_DIR. Returns 0 when a checkpoint was written, 1 otherwise.
+checkpoint_state() {
+    local box="$1" dir state journal tmp failed stats backup old new pairs before
+
+    dir="$MAILDIR/$box"
+    state="$dir/.mbsyncstate"
+    journal="$state.journal"
+    # mbsync replays a journal only while .mbsyncstate.new exists.
+    [[ -f "$journal" && -f "$state.new" ]] || return 1
+    if [[ "$(head -n 1 "$journal")" != 5 ]]; then
+        log "mbsync: journal of $box is not version 5; no checkpoint"
+        return 1
+    fi
+    tmp="$(mktemp "$STATE_DIR/state.tmp.XXXXXX")" || return 1
+    failed="$(mktemp "$STATE_DIR/failed.tmp.XXXXXX")" || { rm -f "$tmp"; return 1; }
+    # Replays the state file and the journal entries that matter for a pull-only channel: | (UID validities),
+    # N (max UIDs), + (a letter queued), > (stored: far UID paired with its near UID), % (its flags then), * (flags of
+    # a pair), - (entry gone: a failed fetch while not paired). Per far UID the last of queued / failed / stored
+    # counts: each attempt queues the letters it has no record of again. A last line without a newline is a write cut
+    # off by a kill; mbsync would refuse it, it is skipped (if it was a ">", that letter comes again, a duplicate).
+    if ! stats="$(gawk -v sf="$state" -v out="$tmp" -v failed="$failed" '
+        function letters(n,    s, i) {
+            s = ""
+            for (i = 1; i <= 6; i++) { if (n % 2) s = s substr("DFPRST", i, 1); n = int(n / 2) }
+            return s
+        }
+        BEGIN {
+            while ((getline line < sf) > 0) {
+                if (line == "") { body = 1; continue }
+                if (!body) {
+                    split(line, h, " ")
+                    if (h[1] == "FarUidValidity") fu = h[2]
+                    else if (h[1] == "NearUidValidity") nu = h[2]
+                    else if (h[1] == "MaxPulledUid") maxf = h[2] + 0
+                    else if (h[1] == "MaxPushedUid") maxn = h[2] + 0
+                    else extra = extra line "\n"
+                    continue
+                }
+                n = split(line, r, " ")
+                if (n < 2) continue
+                if (r[2] + 0 > 0) { rest = line; sub(/^[0-9]+ [0-9]+ ?/, "", rest); pair[r[1] " " r[2]] = rest; st[r[1] + 0] = "s"; before++ }
+                # A record without a near UID (not seen with a pull-only channel) is kept as it is.
+                else keep = keep line "\n"
+            }
+            close(sf)
+            oldmax = maxf + 0
+        }
+        FNR == 1 { next }
+        RT == "" { next }
+        $1 == "|" { fu = $2; nu = $3; next }
+        $1 == "N" { if ($2 == 0) { if ($3 + 0 > maxf) maxf = $3 + 0 } else if ($3 + 0 > maxn) maxn = $3 + 0; next }
+        $1 == "+" { if ($3 == 0 && st[$2 + 0] != "s") st[$2 + 0] = "q"; next }
+        $1 == "%" { pflags[$2 " " $3] = $4; next }
+        $1 == ">" { k = $2 " " $3; if ($3 != 0) delete pair[k]; if ($4 != 0) { pair[$2 " " $4] = letters(pflags[k] + 0); st[$2 + 0] = "s" }; next }
+        $1 == "*" { k = $2 " " $3; if (k in pair) pair[k] = letters($4 + 0); next }
+        $1 == "-" { if ($3 == 0) { if (st[$2 + 0] != "s") st[$2 + 0] = "f" } else delete pair[$2 " " $3]; next }
+        END {
+            if (fu == "" || nu == "") exit 1
+            done = 0; low = ""
+            for (u in st) {
+                if (st[u] == "q") { if (low == "" || u + 0 < low) low = u + 0 }
+                else if (u + 0 > done) done = u + 0
+            }
+            x = done
+            if (low != "" && low - 1 < x) x = low - 1
+            if (x < maxf) x = maxf
+            # Failed, or (not expected) still queued below the new MaxPulledUid: listed for retry.
+            for (u in st) if ((st[u] == "f" || st[u] == "q") && u + 0 <= x) print u > failed
+            close(failed)
+            np = 0
+            for (k in pair) { split(k, p, " "); if (p[2] + 0 > maxn) maxn = p[2] + 0; np++ }
+            printf "FarUidValidity %s\nNearUidValidity %s\nMaxPulledUid %d\nMaxPushedUid %d\n%s\n", fu, nu, x, maxn, extra > out
+            # Closed before sort appends the records.
+            close(out)
+            cmd = "sort -n -k1,1 -k2,2 >> \"" out "\""
+            for (k in pair) print k " " pair[k] | cmd
+            printf "%s", keep | cmd
+            close(cmd)
+            print oldmax, x, np, before + 0
+        }' "$journal")"; then
+        rm -f "$tmp" "$failed"
+        log "mbsync: could not fold the journal of $box; no checkpoint"
+        return 1
+    fi
+    read -r old new pairs before <<<"$stats"
+    if (( new == old && pairs == before )); then
+        rm -f "$tmp" "$failed"
+        return 1
+    fi
+    if ! add_unfetchable "$box" "$failed"; then
+        rm -f "$tmp" "$failed"
+        log "mbsync: could not list the failed letters of $box; no checkpoint"
+        return 1
+    fi
+    rm -f "$failed"
+    # As mbsync saves a state: the new one as .mbsyncstate.new, renamed over the state (one step; with .new gone the
+    # journal is no longer replayed), then the journal set aside. A kill before the rename leaves state and journal
+    # as they were. Outside the snapshots; only the last journal per folder is kept.
+    mv "$tmp" "$state.new" || { rm -f "$tmp"; return 1; }
+    mv "$state.new" "$state" || return 1
+    backup="$JOURNAL_BACKUP_DIR/$box.journal"
+    mkdir -p "$(dirname "$backup")" && mv "$journal" "$backup" || rm -f "$journal"
+    log "mbsync: checkpoint of $box: MaxPulledUid $old -> $new, $pairs letters recorded; the next attempt goes on from there"
+}
+
+
+# add_unfetchable <folder> <file with UIDs> : adds those letters of the folder to UNFETCHABLE_LIST unless listed.
+add_unfetchable() {
+    local now tmp
+
+    [[ -s "$2" ]] || return 0
+    now="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    tmp="$(mktemp "$STATE_DIR/new.tmp.XXXXXX")" || return 1
+    touch "$UNFETCHABLE_LIST" || return 1
+    BOX="$1" gawk -F'\t' -v OFS='\t' -v now="$now" '
+        FILENAME == ARGV[1] { seen[$1 FS $2] = 1; print; next }
+        !((ENVIRON["BOX"] FS $1) in seen) { print ENVIRON["BOX"], $1, now, now, 1 }
+    ' "$UNFETCHABLE_LIST" "$2" | sort -t "$(printf '\t')" -k1,1 -k2,2n >"$tmp" || return 1
+    mv "$tmp" "$UNFETCHABLE_LIST"
 }
 
 
@@ -585,7 +865,8 @@ update_unfetchable() {
 
     refused_letters "$MBSYNC_LOG" | sort -u >"$run" || return 1
 
-    gawk -F'\t' -v OFS='\t' -v now="$now" -v maildir="$MAILDIR" -v rec="$recovered" '
+    # A letter a checkpoint listed in this run already has its first attempt counted.
+    gawk -F'\t' -v OFS='\t' -v now="$now" -v runstart="${RUN_START_ISO:-}" -v maildir="$MAILDIR" -v rec="$recovered" '
         function has_record(box, uid,    f, line, a) {
             if (!(box in loaded)) {
                 loaded[box] = 1
@@ -598,7 +879,7 @@ update_unfetchable() {
             return (box SUBSEP uid) in paired
         }
         FILENAME == ARGV[1] { seen[$1 FS $2] = 1; next }
-        ($1 FS $2) in seen { $4 = now; $5++; print; delete seen[$1 FS $2]; next }
+        ($1 FS $2) in seen { $4 = now; if ($3 < runstart || runstart == "") $5++; print; delete seen[$1 FS $2]; next }
         has_record($1, $2) { print $0, now >rec; next }
         { print }
         END { for (k in seen) { split(k, a, FS); print a[1], a[2], now, now, 1 } }
@@ -707,11 +988,48 @@ EOF
 # LETTERS, MAILDIR_BYTES, REPO_BYTES). Called after every attempt and every snapshot, good or not, so a long first
 # download shows its progress. A failed count must not fail the run: it becomes NaN.
 write_sizes() {
-    local counts
+    local counts folders
 
-    # One walk of the Maildir for both numbers (letters: files in cur/ and new/; bytes: all files).
-    counts="$(find "$MAILDIR" -type f -printf '%s %h\n' 2>/dev/null \
-        | gawk '{ b += $1; if ($2 ~ /\/(cur|new)$/) n++ } END { print n + 0, b + 0 }')" || counts=""
+    # One walk of the Maildir for all numbers (letters: files in cur/ and new/; bytes: all files). Per folder, into
+    # mail_backup_folders.prom: letters here, on the server (FOLDER_COUNTS), refused (UNFETCHABLE_LIST), parked.
+    folders="$(mktemp /tmp/folders.prom.XXXXXX)" || folders=/dev/null
+    # find fails when a file goes away during the walk (mbsync moving tmp/ to new/): the counts still stand.
+    counts="$({ find "$MAILDIR" -type f -printf '%s %h\n' 2>/dev/null || true; } \
+        | gawk -v md="$MAILDIR/" -v out="$folders" -v counts="$FOLDER_COUNTS" -v refused="$UNFETCHABLE_LIST" -v parked="$PARKED_LIST" '
+            function label(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/\n/, "\\n", s); return s }
+            {
+                b += $1
+                d = substr($0, index($0, " ") + 1)
+                if (d ~ /\/(cur|new)$/) {
+                    n++
+                    f = substr(d, length(md) + 1, length(d) - length(md) - 4)
+                    if (substr(d, 1, length(md)) == md) { here[f]++; seen[f] = 1 }
+                }
+            }
+            END {
+                FS = "\t"
+                while ((getline line < counts) > 0) { split(line, a, "\t"); server[a[1]] = a[2]; seen[a[1]] = 1 }
+                while ((getline line < refused) > 0) { split(line, a, "\t"); ref[a[1]]++; seen[a[1]] = 1 }
+                while ((getline line < parked) > 0) if (line != "") { park[line] = 1; seen[line] = 1 }
+                print "# HELP mail_backup_folder_letters Letters of the folder in the Maildir copy now." > out
+                print "# TYPE mail_backup_folder_letters gauge" > out
+                for (f in seen) printf "mail_backup_folder_letters{folder=\"%s\"} %d\n", label(f), here[f] > out
+                print "# HELP mail_backup_folder_server_messages Letters of the folder on the server at the start of the last run (IMAP STATUS)." > out
+                print "# TYPE mail_backup_folder_server_messages gauge" > out
+                for (f in server) printf "mail_backup_folder_server_messages{folder=\"%s\"} %d\n", label(f), server[f] > out
+                print "# HELP mail_backup_folder_refused Refused letters of the folder in the list for retry." > out
+                print "# TYPE mail_backup_folder_refused gauge" > out
+                for (f in seen) printf "mail_backup_folder_refused{folder=\"%s\"} %d\n", label(f), ref[f] > out
+                print "# HELP mail_backup_folder_parked 1 if the folder is parked (left out of mbsync)." > out
+                print "# TYPE mail_backup_folder_parked gauge" > out
+                for (f in seen) printf "mail_backup_folder_parked{folder=\"%s\"} %d\n", label(f), (f in park) > out
+                close(out)
+                print n + 0, b + 0
+            }')" || counts=""
+    if [[ "$folders" != /dev/null ]]; then
+        [[ -n "$counts" ]] && write_prom mail_backup_folders.prom <"$folders" || true
+        rm -f "$folders"
+    fi
     read -r LETTERS MAILDIR_BYTES <<<"$counts" || true
     REPO_BYTES="$(du -sb "$RESTIC_REPOSITORY" 2>/dev/null | cut -f1)" || REPO_BYTES=NaN
     [[ -n "${LETTERS:-}" ]] || LETTERS=NaN
@@ -784,6 +1102,7 @@ main() {
 
     trap on_exit EXIT
     started="$(date +%s)"
+    RUN_START_ISO="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     check_settings
     # The current run's start, for a dashboard showing how long a running backup takes. Microseconds: compared with
     # the previous run's end, which may fall in the same second.

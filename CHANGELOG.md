@@ -7,7 +7,20 @@ on (settings, data layout, metric names).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-11
+
+### Added
+- Checkpoints for big folders. A folder too big for one session never got its mbsync state written, and every
+  attempt asked again, from the lowest UID, for all the letters refused before; after a few attempts nothing new
+  came at all. Now, after an attempt cut off in a folder, its journal is folded into the state (stored letters and
+  their flags kept) and `MaxPulledUid` moves up to where the attempt got to; the next attempt goes on from there.
+  The folded journal is kept in `DATA_DIR/.journals/`.
+- Per-folder counts: letters on the server (IMAP `STATUS` at the start of each run, one connection), here,
+  refused, parked: `mail_backup_folder_*{folder}` metrics, `state/folders.tsv`, and a "Folders" table with totals on
+  the dashboard. The image now has curl.
+
 ### Changed
+- Parking is a fallback now: only a cut-off folder no checkpoint could be written for gets parked.
 - `README.ru.md` has all the badges of `README.md`.
 
 ## [1.0.1] - 2026-10-11
@@ -40,6 +53,7 @@ First release.
 - Offline tests (`tests/test.sh`), images for amd64 and arm64 on ghcr.io and Docker Hub.
 - Setup guide for Yandex 360 (`docs/yandex-360.md`, in Russian).
 
-[Unreleased]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/adsdevdoo/mbsync-restic-backup/releases/tag/v1.0.0

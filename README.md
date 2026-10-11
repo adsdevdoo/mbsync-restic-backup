@@ -34,8 +34,9 @@ Limits: implicit TLS only (port 993, `TLSType IMAPS`) and password login only (`
 
 - **One-way, nothing lost.** Pull-only sync: the mailbox is never changed, deleted letters stay in the backup.
 - **Snapshots, not a mirror.** restic keeps daily, weekly and monthly snapshots, deduplicated and encrypted.
-- **Survives a flaky server.** Restarts after dropped sessions, keeps a list of letters the server refuses and
-  fetches them again later, parks folders it can't get through so the rest of the mailbox still gets backed up.
+- **Survives a flaky server.** Restarts after dropped sessions and goes on where it stopped, even in folders too
+  big for one session; keeps a list of letters the server refuses and fetches them again later.
+- **Per-folder counts:** letters on the server, here, refused, so you see what is left without checking by hand.
 - **Parallel sessions** for slow servers.
 - **Off-host copy** to a second machine over SSH, with a key that can only add files.
 - **Metrics and a Grafana dashboard**, live while a sync runs.
@@ -79,15 +80,18 @@ Versions follow [Semantic Versioning](https://semver.org/): a new major version 
 
 ## What a run does
 
-1. **Sync.** mbsync downloads new letters from every folder into `DATA_DIR/maildir`. If the server drops the
-   connection, mbsync is started again, up to 3 times per run, and continues where it stopped. With `PARALLEL=N`
+1. **Count.** The number of letters in every folder on the server (IMAP `STATUS`, one connection), for the
+   per-folder metrics.
+2. **Sync.** mbsync downloads new letters from every folder into `DATA_DIR/maildir`. If the server drops the
+   connection, mbsync is started again, up to 3 times per run, and continues where it stopped (see
+   [Big folders](#big-folders)). With `PARALLEL=N`
    the folders are split into N groups, one session each, all at the same time; useful when the server is slow to
    answer (each session has its own queue). Servers limit simultaneous IMAP connections (Gmail allows 15; Yandex
    doesn't publish its limit): start with 2.
-2. **Snapshot.** restic snapshots the Maildir into `DATA_DIR/restic`. Retention: 30 daily, 8 weekly, 24 monthly.
+3. **Snapshot.** restic snapshots the Maildir into `DATA_DIR/restic`. Retention: 30 daily, 8 weekly, 24 monthly.
    Once a week `restic check` reads 10% of the data. If the sync failed, the snapshot is still taken, but retention
    is skipped and the run counts as failed.
-3. **Copy** (optional). rsync sends the repository files the second host doesn't have yet.
+4. **Copy** (optional). rsync sends the repository files the second host doesn't have yet.
 
 The scheduler (supercronic) runs this daily at 04:30 by default. Two runs never overlap.
 
@@ -182,13 +186,33 @@ were never listed, for example from before you started using this script.
 Both commands work by lowering `MaxPulledUid` in mbsync's per-folder state. mbsync then walks the folder again,
 skips what it has and asks for the rest. Nothing is downloaded twice.
 
+## Big folders
+
+mbsync writes a folder's state only when it finishes the folder; until then it keeps a journal. A folder too big
+for one session (Yandex 360 drops a session after about 30 minutes) never finishes, and every attempt asks again,
+from the lowest UID, for all the letters refused before. After a few attempts the whole session goes on old
+refusals and nothing new comes.
+
+So after an attempt cut off in a folder, the script does what mbsync does when it finishes one: folds the journal
+into the state file, with every stored letter and its flags, and moves `MaxPulledUid` up to the end of the unbroken
+run of letters the attempt dealt with (`mbsync: checkpoint of …` in the log). The next attempt goes on from there.
+Every letter whose fetch failed up to there (refused or not) goes on the list for `retry`; letters queued but not
+reached come next time. The folded journal is kept in `DATA_DIR/.journals/` (the last one per folder, not in the
+snapshots).
+
+A letter deleted on the server between the listing and its fetch also counts as failed. It stays on the list (and
+in the refused count) until you remove its line:
+
+```sh
+docker exec mail-backup flock /data/.backup.lock gawk -i inplace -F'\t' -v f='Folder name' -v u=UID '!($1 == f && $2 == u)' /data/state/unfetchable.tsv
+```
+
 ## Parked folders
 
-Until a folder is finished, mbsync retries its refused letters from the lowest UID in every attempt. If the server
-refuses a block longer than one session lasts, the folder never finishes, and neither does the rest of the mailbox.
-
-So a folder is **parked** (left out of the sync) when two attempts in a row (`PARK_AFTER=2`, the default; `1` parks
-after the first) were cut off in it and each had both:
+A fallback, for a cut-off folder no checkpoint could be written for (no journal to fold) or where one would not
+move anything (the server gave nothing in the whole attempt): a folder is
+**parked** (left out of the sync) when two attempts in a row (`PARK_AFTER=2`, the default; `1` parks after the
+first) were cut off in it and each had both:
 - at least 300 refusals in that folder;
 - more than twice as many refusals as letters stored from it.
 
@@ -269,10 +293,13 @@ Mount a node_exporter textfile collector directory at `/metrics` (see `compose.y
 | `mail_backup_progress_timestamp_seconds` | last progress tick of a running sync (every `PROGRESS_INTERVAL`) |
 | `mail_backup_run_started_timestamp_seconds`, `mail_backup_run_finished_timestamp_seconds` | start and end of the last run; started > finished = a run is going |
 | `mail_backup_unfetchable_messages`, `mail_backup_parked_folders` | refused letters, parked folders |
+| `mail_backup_folder_server_messages{folder}` | letters of the folder on the server at the start of the last run |
+| `mail_backup_folder_letters{folder}`, `…_folder_refused{folder}`, `…_folder_parked{folder}` | per folder: letters here now, refused letters listed, 1 if parked |
 | `mail_backup_copy_last_success_timestamp_seconds`, `…_copy_last_failure_…` | off-host copy |
 
 A Grafana dashboard for these metrics: `grafana/mail-backup.json` (Dashboards → New → Import; pick your Prometheus
-data source). It shows the last run, letters, sizes, refused letters, parked folders and the off-host copy.
+data source). It shows the last run, letters, sizes, refused letters, parked folders, the off-host copy, and a
+table of folders: on the server, here, not downloaded yet, refused.
 
 Useful alerts:
 - no success for 26 hours: `time() - mail_backup_last_success_timestamp_seconds > 26*3600`;
@@ -308,7 +335,7 @@ organization and the mailbox, app password.
 |---|---|
 | `backup.sh` | everything a run does; the comments at the top explain the less obvious parts |
 | `entrypoint.sh` | writes the crontab from `SCHEDULE` and starts supercronic |
-| `Dockerfile` | Alpine with isync, restic, supercronic, rsync |
+| `Dockerfile` | Alpine with isync, restic, supercronic, rsync, curl |
 | `compose.yml`, `.env.example` | how to run it |
 | `grafana/mail-backup.json` | Grafana dashboard for the metrics |
 | `tests/test.sh` | tests against a stub mbsync, no mailbox needed: `sh tests/test.sh` (Docker; the first build downloads Alpine packages) |
@@ -323,7 +350,8 @@ Inside `DATA_DIR`:
 |---|---|
 | `maildir/` | the Maildir |
 | `restic/` | the repository |
-| `state/` | refused letters, parked folders; included in every snapshot |
+| `state/` | refused letters, parked folders, letters per folder on the server; included in every snapshot |
+| `.journals/` | the last mbsync journal folded by a checkpoint, per folder; not in the snapshots |
 | `maildir-gone/` | put folders here by hand that were deleted on the server; they stay in every snapshot |
 | `.mbsync-last.log` | full mbsync output of the last run |
 
