@@ -1,13 +1,21 @@
 #!/bin/sh
-# Offline tests: builds the image and runs backup.sh against a stub mbsync that prints mbsync -V output for a
-# scenario. No network, no real mailbox. Needs Docker. Usage: sh tests/test.sh
+# Tests: builds the image and runs backup.sh against a stub mbsync that prints mbsync -V output for a scenario.
+# The scenarios run without network and without a real mailbox; the first `docker build` needs the internet for
+# the Alpine packages. Needs Docker. Usage: sh tests/test.sh
 # Each scenario prints its result; the script ends with "FAILED: N" (0 = all good) and exits non-zero on failures.
+# Every scenario starts from an empty Maildir and state (the restic repository stays), except where noted.
 set -u
 cd "$(dirname "$0")/.." || exit 1
 IMG=mbsync-restic-backup:test
 docker build -q -t "$IMG" . >/dev/null || { echo "build failed"; exit 1; }
 
 d=$(mktemp -d)
+cleanup() {
+    docker rm -f mrb-sched-test >/dev/null 2>&1
+    docker run --rm -v "$d:/d" alpine:3.22 rm -rf /d/data /d/metrics /d/secrets /d/bin
+    rmdir "$d" 2>/dev/null
+}
+trap cleanup EXIT
 mkdir -p "$d/data" "$d/secrets" "$d/metrics" "$d/bin"
 echo fake >"$d/secrets/imap_password"
 head -c 32 /dev/urandom | base64 >"$d/secrets/restic_password"
@@ -50,12 +58,26 @@ esac
 EOF
 chmod +x "$d/bin/mbsync"
 
-# check <name> <expected rc> <regex the output must match> <scenario> [backup.sh args] [extra docker args]
+# reset : empty Maildir, state and log; the restic repository stays.
+reset() {
+  docker run --rm -v "$d/data:/data" alpine:3.22 rm -rf /data/maildir /data/state /data/.mbsync-last.log
+}
+
+# check <name> <expected rc> <regexes, ";;"-separated, all must match> <scenario> [backup.sh args]
+#       [extra docker args] [keep: do not reset before]
 check() {
+  [ "${7:-}" = keep ] || reset
   echo "$4" >"$d/data/scenario"
   out=$(docker run --rm --network none $V ${6:-} "$IMG" sh -c "backup.sh ${5:-}; echo rc=\$?" 2>&1)
   rc=$(echo "$out" | sed -n 's/^rc=//p')
-  if [ "$rc" = "$2" ] && echo "$out" | grep -qE "$3"; then
+  ok=yes
+  [ "$rc" = "$2" ] || ok=no
+  rest="$3;;"
+  while [ -n "$rest" ]; do
+    re="${rest%%;;*}"; rest="${rest#*;;}"
+    [ -z "$re" ] || echo "$out" | grep -qE "$re" || ok=no
+  done
+  if [ "$ok" = yes ]; then
     echo "ok   $1"
   else
     echo "FAIL $1 (rc=$rc, expected $2, wanted /$3/)"; echo "$out" | grep -vE 'UNAVAILABLE|SERVERBUG' | tail -5
@@ -65,7 +87,8 @@ check() {
 
 docker run --rm --network none $V "$IMG" backup.sh init >/dev/null || { echo "init failed"; FAILED=$((FAILED + 1)); }
 check "refused letters do not fail the run"   0 'all folders done; 3 refused'         refused ""
-check "retry rewinds and records recovery"    0 'STATE MaxPulledUid 612.*|came through' retry   retry
+# Needs the list and the INBOX state the previous scenario left.
+check "retry rewinds and records recovery"    0 'STATE MaxPulledUid 612;;1 letters .* came through' retry retry "" keep
 check "dropped session, second attempt ok"    0 'attempt 2 of 3'                      byeok   ""
 check "real error fails the run"              1 'mbsync failed'                       realerr ""
 check "killed mbsync fails the run"           1 'mbsync failed'                       killed  ""
@@ -79,12 +102,10 @@ check "COPY_TARGET without colon"             1 'COPY_TARGET must be'           
 check "bad number setting"                    1 'must be a number'                    refused "" "-e PARK_RATIO=08"
 
 # The scheduler starts as PID 1 and stays up.
+docker rm -f mrb-sched-test >/dev/null 2>&1
 docker run -d --name mrb-sched-test $E -e SCHEDULE='*/5 * * * *' "$IMG" >/dev/null
 sleep 4
 if docker ps --filter name=mrb-sched-test --format '{{.Status}}' | grep -q '^Up'; then echo "ok   scheduler stays up"; else echo "FAIL scheduler"; FAILED=$((FAILED + 1)); fi
-docker rm -f mrb-sched-test >/dev/null
 
-docker run --rm -v "$d:/d" alpine:3.22 rm -rf /d/data /d/metrics /d/secrets /d/bin
-rmdir "$d"
 echo "FAILED: $FAILED"
 [ "$FAILED" -eq 0 ]
