@@ -19,8 +19,8 @@ Limits: implicit TLS only (port 993, `TLSType IMAPS`) and password login only (`
 1. **Sync.** mbsync downloads new letters from every folder into `DATA_DIR/maildir`. If the server drops the
    connection, mbsync is started again, up to 3 times per run, and continues where it stopped. With `PARALLEL=N`
    the folders are split into N groups, one session each, all at the same time; useful when the server is slow to
-   answer (each session has its own queue). Servers limit simultaneous IMAP connections (Gmail ~15, Yahoo 8,
-   iCloud 4; Yandex doesn't publish its limit): start with 2.
+   answer (each session has its own queue). Servers limit simultaneous IMAP connections (Gmail allows 15; Yandex
+   doesn't publish its limit): start with 2.
 2. **Snapshot.** restic snapshots the Maildir into `DATA_DIR/restic`. Retention: 30 daily, 8 weekly, 24 monthly.
    Once a week `restic check` reads 10% of the data. If the sync failed, the snapshot is still taken, but retention
    is skipped and the run counts as failed.

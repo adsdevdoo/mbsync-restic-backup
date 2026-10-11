@@ -220,7 +220,7 @@ check_repository() {
 # dropped connection only the unfinished groups run again. A failure in keeping the lists is logged but does not
 # decide the run.
 sync_mail() {
-    local attempt i n glog more state=()
+    local attempt i n f glog more state=()
 
     mkdir -p "$MAILDIR" "$STATE_DIR"
     # Leftovers of a killed run (the lock is ours).
@@ -253,6 +253,10 @@ sync_mail() {
             read -r MBSYNC_RC TEE_RC <"$glog.rc" || { MBSYNC_RC=255; TEE_RC=255; }
             if mbsync_complete "$glog"; then
                 state[i]=done
+                # Its folders are done: forget their stalls.
+                while IFS= read -r f; do
+                    stall_set "$f"
+                done < <(gawk '/^Opening far side box / { b = $0; sub(/^Opening far side box /, "", b); sub(/\.\.\.$/, "", b); print b }' "$glog" | sort -u)
                 continue
             fi
             check_stall "$glog" || log "ERROR: could not check session $((i + 1)) for a stalled folder."
@@ -316,7 +320,9 @@ pending_groups() {
 
 # plan_groups : GROUP_PATTERNS, one mbsync Patterns value per session. PARALLEL=1: one session, all folders ("*").
 # Otherwise the folders mbsync lists on the server, parked ones left out, dealt round-robin in listing order (runs
-# of similar folders end up in different sessions). If the list cannot be had, one session.
+# of similar folders end up in different sessions). If the list cannot be had, one session. A folder name holding
+# * or % works as a wildcard in Patterns and may match another group's folder: mbsync's folder lock then fails
+# one of the two sessions, visibly.
 plan_groups() {
     local names
 
