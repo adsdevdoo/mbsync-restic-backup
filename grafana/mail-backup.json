@@ -46,7 +46,7 @@
   },
   {
    "type": "stat",
-   "title": "Sync",
+   "title": "Backup",
    "datasource": {
     "type": "prometheus",
     "uid": "${datasource}"
@@ -64,7 +64,7 @@
       "type": "prometheus",
       "uid": "${datasource}"
      },
-     "expr": "((time() - max(mail_backup_progress_timestamp_seconds) < 180) * 0 + 1) or vector(0)",
+     "expr": "((max(mail_backup_run_started_timestamp_seconds) > (max(mail_backup_run_finished_timestamp_seconds) or vector(0))) * 0 + 1) or vector(0)",
      "legendFormat": "",
      "refId": "D"
     }
@@ -138,7 +138,7 @@
       "type": "prometheus",
       "uid": "${datasource}"
      },
-     "expr": "((time() - max(mail_backup_run_started_timestamp_seconds)) and (time() - max(mail_backup_progress_timestamp_seconds) < 180)) or max(mail_backup_last_duration_seconds)",
+     "expr": "((time() - max(mail_backup_run_started_timestamp_seconds)) and (max(mail_backup_run_started_timestamp_seconds) > (max(mail_backup_run_finished_timestamp_seconds) or vector(0)))) or max(mail_backup_last_duration_seconds)",
      "legendFormat": "",
      "refId": "F"
     }
@@ -539,7 +539,7 @@
       "type": "prometheus",
       "uid": "${datasource}"
      },
-     "expr": "deriv(max(mail_backup_letters)[15m:1m]) * 60",
+     "expr": "clamp_min(deriv(max(mail_backup_letters)[15m:1m]) * 60, 0)",
      "legendFormat": "",
      "refId": "S"
     }
@@ -921,7 +921,7 @@
       "type": "prometheus",
       "uid": "${datasource}"
      },
-     "expr": "deriv(max(mail_backup_letters)[15m:1m]) * 60",
+     "expr": "clamp_min(deriv(max(mail_backup_letters)[15m:1m]) * 60, 0)",
      "legendFormat": "letters/min",
      "refId": "E"
     }

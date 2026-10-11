@@ -147,6 +147,12 @@ write_prom() {
 on_exit() {
     local rc=$?
 
+    # Every end of a run, good or not: with the start (mail_backup_run.prom) a dashboard tells a running backup.
+    write_prom mail_backup_run_end.prom <<EOF || true
+# HELP mail_backup_run_finished_timestamp_seconds When the last backup run ended (good or not).
+# TYPE mail_backup_run_finished_timestamp_seconds gauge
+mail_backup_run_finished_timestamp_seconds $(date +%s)
+EOF
     if (( rc != 0 )); then
         log "ERROR: backup failed (exit code $rc)."
         write_prom mail_backup_failure.prom <<EOF || true
