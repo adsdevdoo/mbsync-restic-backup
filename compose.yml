@@ -1,0 +1,23 @@
+services:
+  mail-backup:
+    build: .
+    image: mbsync-restic-backup:local
+    container_name: mail-backup
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # Maildir, restic repository, script state. Not created when missing: a backup must not land on an empty
+      # directory because the backup disk was not mounted.
+      - type: bind
+        source: ${DATA_DIR:?set DATA_DIR in .env}
+        target: /data
+        bind: {create_host_path: false}
+      # imap_password, restic_password; copy_ssh_key and copy_known_hosts for the off-host copy.
+      - ./secrets:/run/secrets:ro
+      # Optional: node_exporter textfile collector for the metrics.
+      # - /var/lib/node_exporter/textfile:/metrics
+    mem_limit: 1g
+    stop_grace_period: 2m
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
