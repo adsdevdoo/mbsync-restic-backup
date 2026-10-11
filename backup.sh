@@ -73,6 +73,9 @@ PARK_AFTER="${PARK_AFTER:-2}"
 # mbsync sessions at the same time, each on its own share of the folders (1-8). Mind the server's limit on
 # simultaneous IMAP connections.
 PARALLEL="${PARALLEL:-1}"
+# While mbsync runs, letters and sizes are written every this many seconds, with a progress timestamp (0 = only
+# after each attempt).
+PROGRESS_INTERVAL="${PROGRESS_INTERVAL:-60}"
 # Space-separated, so a folder with a space in its name cannot be listed here; empty = none.
 read -r -a NEVER_PARK <<<"${NEVER_PARK-INBOX Sent Drafts}"
 # yes: wait for a running backup instead of skipping (for loops of manual runs).
@@ -176,7 +179,7 @@ check_settings() {
             exit 1
         fi
     done
-    for v in IMAP_PORT PIPELINE_DEPTH MBSYNC_ATTEMPTS KEEP_DAILY KEEP_WEEKLY KEEP_MONTHLY PARK_FAILURES PARK_RATIO PARK_AFTER PARALLEL REFUSED_MAX COPY_PORT; do
+    for v in IMAP_PORT PIPELINE_DEPTH MBSYNC_ATTEMPTS KEEP_DAILY KEEP_WEEKLY KEEP_MONTHLY PARK_FAILURES PARK_RATIO PARK_AFTER PARALLEL PROGRESS_INTERVAL REFUSED_MAX COPY_PORT; do
         # No leading zeros: bash arithmetic would read 08 as octal.
         if [[ ! "${!v}" =~ ^(0|[1-9][0-9]*)$ ]]; then
             log "ERROR: $v must be a number, got '${!v}'."
@@ -220,7 +223,7 @@ check_repository() {
 # dropped connection only the unfinished groups run again. A failure in keeping the lists is logged but does not
 # decide the run.
 sync_mail() {
-    local attempt i n f glog more state=()
+    local attempt i n f glog more ticker="" state=() pids=()
 
     mkdir -p "$MAILDIR" "$STATE_DIR"
     # Leftovers of a killed run (the lock is ours).
@@ -230,6 +233,10 @@ sync_mail() {
 
     plan_groups
     n=${#GROUP_PATTERNS[@]}
+    if (( PROGRESS_INTERVAL > 0 )); then
+        progress_ticker &
+        ticker=$!
+    fi
     # state[i]: "" = to run, done, failed (an error another attempt would just repeat).
     for (( attempt = 1; attempt <= MBSYNC_ATTEMPTS; attempt++ )); do
         touch "$ATTEMPT_MARK"
@@ -242,8 +249,11 @@ sync_mail() {
                 continue
             fi
             run_group "$i" &
+            pids+=($!)
         done
-        wait
+        # The sessions only: a bare wait would also wait for the progress ticker, forever.
+        (( ${#pids[@]} == 0 )) || wait "${pids[@]}"
+        pids=()
 
         more=no
         for (( i = 0; i < n; i++ )); do
@@ -267,8 +277,13 @@ sync_mail() {
                 state[i]=failed
             fi
         done
+        write_sizes
         [[ "$more" == yes ]] || break
     done
+    if [[ -n "$ticker" ]]; then
+        kill "$ticker" 2>/dev/null
+        wait "$ticker" 2>/dev/null
+    fi
     rm -f "$MBSYNC_LOG".g* "$MBSYNC_RC_FILE".*
 
     local complete=yes
@@ -661,32 +676,66 @@ EOF
 }
 
 
-write_metrics() {
-    local duration="$1" letters maildir_bytes repo_bytes
+# progress_ticker : runs in the background while mbsync works: every PROGRESS_INTERVAL seconds writes the sizes and
+# mail_backup_progress_timestamp_seconds, so a dashboard follows a long download live and sees that it is moving.
+# Stops when killed by sync_mail or when the script that started it is gone.
+progress_ticker() {
+    local parent=$$
 
-    # The snapshot is already taken: a failed count must not turn the run into a failure.
-    letters="$(find "$MAILDIR" -type f \( -path '*/cur/*' -o -path '*/new/*' \) | wc -l)" || letters=NaN
-    maildir_bytes="$(du -sb "$MAILDIR" | cut -f1)" || maildir_bytes=NaN
-    repo_bytes="$(du -sb "$RESTIC_REPOSITORY" | cut -f1)" || repo_bytes=NaN
+    while kill -0 "$parent" 2>/dev/null; do
+        write_sizes
+        write_prom mail_backup_progress.prom <<EOF || true
+# HELP mail_backup_progress_timestamp_seconds Last progress tick of a running mbsync (every PROGRESS_INTERVAL s).
+# TYPE mail_backup_progress_timestamp_seconds gauge
+mail_backup_progress_timestamp_seconds $(date +%s)
+EOF
+        sleep "$PROGRESS_INTERVAL"
+    done
+}
+
+
+# write_sizes : letters, Maildir and repository size as they are now, into mail_backup_size.prom (and the globals
+# LETTERS, MAILDIR_BYTES, REPO_BYTES). Called after every attempt and every snapshot, good or not, so a long first
+# download shows its progress. A failed count must not fail the run: it becomes NaN.
+write_sizes() {
+    LETTERS="$(find "$MAILDIR" -type f \( -path '*/cur/*' -o -path '*/new/*' \) 2>/dev/null | wc -l)" || LETTERS=NaN
+    MAILDIR_BYTES="$(du -sb "$MAILDIR" 2>/dev/null | cut -f1)" || MAILDIR_BYTES=NaN
+    REPO_BYTES="$(du -sb "$RESTIC_REPOSITORY" 2>/dev/null | cut -f1)" || REPO_BYTES=NaN
+    [[ -n "$MAILDIR_BYTES" ]] || MAILDIR_BYTES=NaN
+    [[ -n "$REPO_BYTES" ]] || REPO_BYTES=NaN
+
+    # Earlier versions kept these in mail_backup.prom; the same metric in two files makes node_exporter drop the
+    # whole textfile collector, so take them out of there first.
+    if [[ -f "$METRICS_DIR/mail_backup.prom" ]] && grep -qE '^mail_backup_(letters|maildir_bytes|repository_bytes) ' "$METRICS_DIR/mail_backup.prom"; then
+        grep -vE 'mail_backup_(letters|maildir_bytes|repository_bytes)' "$METRICS_DIR/mail_backup.prom" | write_prom mail_backup.prom || true
+    fi
+
+    write_prom mail_backup_size.prom <<EOF || true
+# HELP mail_backup_letters Letters in the Maildir copy now (after the last mbsync attempt).
+# TYPE mail_backup_letters gauge
+mail_backup_letters ${LETTERS}
+# HELP mail_backup_maildir_bytes Size of the Maildir copy now.
+# TYPE mail_backup_maildir_bytes gauge
+mail_backup_maildir_bytes ${MAILDIR_BYTES}
+# HELP mail_backup_repository_bytes Size of the restic repository now.
+# TYPE mail_backup_repository_bytes gauge
+mail_backup_repository_bytes ${REPO_BYTES}
+EOF
+}
+
+
+write_metrics() {
+    local duration="$1"
 
     write_prom mail_backup.prom <<EOF
 # HELP mail_backup_last_success_timestamp_seconds When the last mail backup (mbsync + restic snapshot) succeeded.
 # TYPE mail_backup_last_success_timestamp_seconds gauge
 mail_backup_last_success_timestamp_seconds $(date +%s)
-# HELP mail_backup_letters Letters in the Maildir copy after the last good run.
-# TYPE mail_backup_letters gauge
-mail_backup_letters ${letters}
-# HELP mail_backup_maildir_bytes Size of the Maildir copy.
-# TYPE mail_backup_maildir_bytes gauge
-mail_backup_maildir_bytes ${maildir_bytes}
-# HELP mail_backup_repository_bytes Size of the restic repository.
-# TYPE mail_backup_repository_bytes gauge
-mail_backup_repository_bytes ${repo_bytes}
 # HELP mail_backup_last_duration_seconds How long the last good run took.
 # TYPE mail_backup_last_duration_seconds gauge
 mail_backup_last_duration_seconds ${duration}
 EOF
-    log "done: $letters letters, Maildir $maildir_bytes bytes, repository $repo_bytes bytes, ${duration}s"
+    log "done: $LETTERS letters, Maildir $MAILDIR_BYTES bytes, repository $REPO_BYTES bytes, ${duration}s"
 }
 
 
@@ -730,6 +779,7 @@ main() {
     esac
     sync_mail || synced=no
     snapshot "$synced"
+    write_sizes
     if [[ -n "$COPY_TARGET" ]]; then
         copy_offsite || copy_failed
     fi

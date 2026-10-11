@@ -733,9 +733,83 @@
    }
   },
   {
+   "type": "stat",
+   "title": "Sync running",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 24,
+   "gridPos": {
+    "x": 20,
+    "y": 5,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "(time() - max(mail_backup_progress_timestamp_seconds) < bool 180) or vector(0)",
+     "legendFormat": "",
+     "refId": "Z"
+    }
+   ],
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "no"
+        },
+        "1": {
+         "text": "YES"
+        }
+       }
+      }
+     ]
+    },
+    "overrides": []
+   }
+  },
+  {
    "type": "row",
    "title": "Trends",
-   "id": 24,
+   "id": 26,
    "collapsed": false,
    "gridPos": {
     "x": 0,
@@ -752,7 +826,7 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 26,
+   "id": 28,
    "gridPos": {
     "x": 0,
     "y": 10,
@@ -767,7 +841,7 @@
      },
      "expr": "max(mail_backup_letters)",
      "legendFormat": "letters",
-     "refId": "Z"
+     "refId": "B"
     }
    ],
    "options": {
@@ -812,12 +886,12 @@
   },
   {
    "type": "timeseries",
-   "title": "Size",
+   "title": "Letters per minute",
    "datasource": {
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 29,
+   "id": 30,
    "gridPos": {
     "x": 12,
     "y": 10,
@@ -830,9 +904,75 @@
       "type": "prometheus",
       "uid": "${datasource}"
      },
+     "expr": "deriv(max(mail_backup_letters)[15m:1m]) * 60",
+     "legendFormat": "letters/min",
+     "refId": "D"
+    }
+   ],
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "bottom",
+     "calcs": [
+      "lastNotNull",
+      "max",
+      "mean"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "gradientMode": "opacity",
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Size",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 33,
+   "gridPos": {
+    "x": 0,
+    "y": 18,
+    "w": 24,
+    "h": 8
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
      "expr": "max(mail_backup_maildir_bytes)",
      "legendFormat": "Maildir",
-     "refId": "B"
+     "refId": "F"
     },
     {
      "datasource": {
@@ -841,7 +981,7 @@
      },
      "expr": "max(mail_backup_repository_bytes)",
      "legendFormat": "repository",
-     "refId": "C"
+     "refId": "G"
     }
    ],
    "options": {
@@ -891,10 +1031,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 31,
+   "id": 35,
    "gridPos": {
     "x": 0,
-    "y": 18,
+    "y": 26,
     "w": 12,
     "h": 8
    },
@@ -906,7 +1046,7 @@
      },
      "expr": "max(mail_backup_unfetchable_messages)",
      "legendFormat": "refused",
-     "refId": "E"
+     "refId": "I"
     }
    ],
    "options": {
@@ -956,10 +1096,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 33,
+   "id": 37,
    "gridPos": {
     "x": 12,
-    "y": 18,
+    "y": 26,
     "w": 12,
     "h": 8
    },
@@ -971,7 +1111,7 @@
      },
      "expr": "max(mail_backup_parked_folders)",
      "legendFormat": "parked",
-     "refId": "G"
+     "refId": "K"
     }
    ],
    "options": {

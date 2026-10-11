@@ -71,6 +71,7 @@ All settings are in `.env`; see `.env.example`. The main ones:
 | `SCHEDULE`, `TZ` | `30 4 * * *`, UTC | when to run |
 | `KEEP_DAILY`, `KEEP_WEEKLY`, `KEEP_MONTHLY` | 30, 8, 24 | snapshot retention |
 | `PARALLEL` | 1 | mbsync sessions at the same time, each on its own share of the folders (1-8) |
+| `PROGRESS_INTERVAL` | 60 | while mbsync runs, write letters and sizes every N seconds (0 = after each attempt only) |
 | `PIPELINE_DEPTH` | 8 | IMAP commands in flight |
 | `MBSYNC_ATTEMPTS` | 3 | mbsync restarts per run after a dropped connection |
 | `REFUSED_PATTERN` | any text | which server answers to a letter fetch count as a refused letter (regex) |
@@ -196,7 +197,8 @@ Mount a node_exporter textfile collector directory at `/metrics` (see `compose.y
 |---|---|
 | `mail_backup_last_success_timestamp_seconds` | last good run |
 | `mail_backup_last_failure_timestamp_seconds` | last failed run |
-| `mail_backup_letters`, `mail_backup_maildir_bytes`, `mail_backup_repository_bytes` | size after the last good run |
+| `mail_backup_letters`, `mail_backup_maildir_bytes`, `mail_backup_repository_bytes` | size now, updated after every mbsync attempt and snapshot (shows the progress of a long first download) |
+| `mail_backup_progress_timestamp_seconds` | last progress tick of a running sync (every `PROGRESS_INTERVAL`) |
 | `mail_backup_unfetchable_messages`, `mail_backup_parked_folders` | refused letters, parked folders |
 | `mail_backup_copy_last_success_timestamp_seconds`, `…_copy_last_failure_…` | off-host copy |
 

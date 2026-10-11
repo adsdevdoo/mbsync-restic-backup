@@ -47,6 +47,7 @@ sum() { echo "Channels: 1    Boxes: 2"; }
 state() { printf 'FarUidValidity 1\nNearUidValidity 2\nMaxPulledUid 5000\nMaxPushedUid 9\n\n612 590 S\n' >/data/maildir/INBOX/.mbsyncstate; }
 case $s in
   refused) box INBOX; state; fail 613; fail 800; box Other; other 9; sum; exit 1;;
+  slow) box INBOX; sleep 4; sum; exit 0;;
   rewound) echo "STATE $(grep MaxPulledUid /data/maildir/INBOX/.mbsyncstate)"; box INBOX; sum; exit 0;;
   retry)
     echo "STATE $(grep MaxPulledUid /data/maildir/INBOX/.mbsyncstate)"
@@ -111,7 +112,14 @@ check "refused letters do not fail the run"   0 'all folders done; 3 refused'   
 check "retry rewinds and records recovery"    0 'STATE MaxPulledUid 612;;: 1 letters .* came through' retry retry "" keep
 check "dropped session, second attempt ok"    0 'attempt 2 of 3'                      byeok   ""
 check "real error fails the run"              1 'mbsync failed'                       realerr ""
+if grep -q '^mail_backup_letters [0-9]' "$d/metrics/mail_backup_size.prom" 2>/dev/null; then
+  echo "ok   sizes written after a failed run"; else echo "FAIL sizes written after a failed run"; FAILED=$((FAILED + 1)); fi
 check "killed mbsync fails the run"           1 'mbsync failed'                       killed  ""
+rm -f "$d/metrics/mail_backup_progress.prom"
+# Also proves the run does not hang waiting for the ticker.
+check "progress ticker during a slow sync"    0 'done:'                               slow    "" "-e PROGRESS_INTERVAL=1"
+if grep -q '^mail_backup_progress_timestamp_seconds [0-9]' "$d/metrics/mail_backup_progress.prom" 2>/dev/null; then
+  echo "ok   progress timestamp written"; else echo "FAIL progress timestamp written"; FAILED=$((FAILED + 1)); fi
 check "stalled folder gets parked"            0 'parked Bad Box'                      stall   ""
 check "PARK_AFTER=1 parks at the first stall" 0 'parked Bad Box: attempt stalled;;attempt 2 of 3' stall "" "-e PARK_AFTER=1"
 check "PARK_AFTER must be 1 or 2"             1 'PARK_AFTER must be 1 or 2'           refused "" "-e PARK_AFTER=3"
