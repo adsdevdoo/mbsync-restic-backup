@@ -7,6 +7,8 @@ about a particular deployment (hosts, IPs, user names, mailbox addresses, paths 
 
 - No commit, push or tag without an explicit OK from the maintainer ("commit", "push"). Changes stay in the
   working tree until then. Commits already made are not rolled back; later work goes on top of them.
+- Never rewrite pushed history (no amend, rebase or force-push of pushed commits): deployments build this
+  repository at a pinned commit, which must stay reachable.
 - Commit messages in English, in the style of the history: a short subject line and a body that says why. No
   `Co-Authored-By` or any other attribution trailer.
 - One fix or feature per commit, with its README changes in the same commit.
