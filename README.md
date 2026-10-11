@@ -73,6 +73,7 @@ All settings are in `.env`; see `.env.example`. The main ones:
 | `REFUSED_MAX` | 1000 | more refused letters in one attempt fail the run; 0 = no limit |
 | `EXTRA_PATTERNS` | — | extra mbsync patterns, e.g. `!"[Gmail]/All Mail"` |
 | `NEVER_PARK` | `INBOX Sent Drafts` | folders never parked; space-separated, empty = none |
+| `PARK_AFTER` | 2 | stalled attempts in a row before a folder is parked: 2 or 1 |
 | `COPY_TARGET`, `COPY_PORT` | off, 22 | off-host copy, `user@host:path`; the colon is required |
 
 After changing `.env`, run `docker compose up -d`. Values with brackets, quotes or spaces need no quoting (checked
@@ -113,7 +114,8 @@ skips what it has and asks for the rest. Nothing is downloaded twice.
 Until a folder is finished, mbsync retries its refused letters from the lowest UID in every attempt. If the server
 refuses a block longer than one session lasts, the folder never finishes, and neither does the rest of the mailbox.
 
-So a folder is **parked** (left out of the sync) when two attempts in a row were cut off in it and each had both:
+So a folder is **parked** (left out of the sync) when two attempts in a row (`PARK_AFTER=2`, the default; `1` parks
+after the first) were cut off in it and each had both:
 - at least 300 refusals in that folder;
 - more than twice as many refusals as letters stored from it.
 

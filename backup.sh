@@ -29,8 +29,8 @@
 #
 # Parked folders. Until a folder is done, every attempt asks again for its refused letters from the lowest UID. If
 # the server refuses a block longer than a session lasts, the folder never gets done. A folder is parked (left out
-# of mbsync) when two attempts in a row were cut off in it with at least PARK_FAILURES refused letters and more than
-# PARK_RATIO times as many as letters stored from it in that attempt. NEVER_PARK folders are not parked: the run
+# of mbsync) when PARK_AFTER attempts in a row (2 by default, or 1) were cut off in it with at least PARK_FAILURES
+# refused letters and more than PARK_RATIO times as many as letters stored from it in that attempt. NEVER_PARK folders are not parked: the run
 # fails instead. The folder keeps its journal; remove its line from PARKED_LIST to take it back.
 #
 set -euo pipefail
@@ -62,6 +62,8 @@ REFUSED_MAX="${REFUSED_MAX:-1000}"
 EXTRA_PATTERNS="${EXTRA_PATTERNS:-}"
 PARK_FAILURES="${PARK_FAILURES:-300}"
 PARK_RATIO="${PARK_RATIO:-2}"
+# Stalled attempts in a row (in the same folder) before it is parked: 2 waits for a confirmation, 1 parks at once.
+PARK_AFTER="${PARK_AFTER:-2}"
 # Space-separated, so a folder with a space in its name cannot be listed here; empty = none.
 read -r -a NEVER_PARK <<<"${NEVER_PARK-INBOX Sent Drafts}"
 # yes: wait for a running backup instead of skipping (for loops of manual runs).
@@ -164,13 +166,17 @@ check_settings() {
             exit 1
         fi
     done
-    for v in IMAP_PORT PIPELINE_DEPTH MBSYNC_ATTEMPTS KEEP_DAILY KEEP_WEEKLY KEEP_MONTHLY PARK_FAILURES PARK_RATIO REFUSED_MAX COPY_PORT; do
+    for v in IMAP_PORT PIPELINE_DEPTH MBSYNC_ATTEMPTS KEEP_DAILY KEEP_WEEKLY KEEP_MONTHLY PARK_FAILURES PARK_RATIO PARK_AFTER REFUSED_MAX COPY_PORT; do
         # No leading zeros: bash arithmetic would read 08 as octal.
         if [[ ! "${!v}" =~ ^(0|[1-9][0-9]*)$ ]]; then
             log "ERROR: $v must be a number, got '${!v}'."
             exit 1
         fi
     done
+    if [[ ! "$PARK_AFTER" =~ ^[12]$ ]]; then
+        log "ERROR: PARK_AFTER must be 1 or 2, got '$PARK_AFTER'."
+        exit 1
+    fi
     if [[ ! "$CHECK_WEEKDAY" =~ ^[1-7]?$ ]]; then
         log "ERROR: CHECK_WEEKDAY must be 1-7 or empty, got '$CHECK_WEEKDAY'."
         exit 1
@@ -376,7 +382,11 @@ check_stall() {
             return 0
         fi
     done
-    if [[ -f "$STALL_FILE" ]] && IFS=$'\t' read -r prev_box prev_fails <"$STALL_FILE" && [[ "$prev_box" == "$box" ]]; then
+    if (( PARK_AFTER <= 1 )); then
+        printf '%s\n' "$box" >>"$PARKED_LIST" || return 1
+        rm -f "$STALL_FILE"
+        log "mbsync: parked $box: attempt stalled in it ($fails refused, $stored stored); see $PARKED_LIST"
+    elif [[ -f "$STALL_FILE" ]] && IFS=$'\t' read -r prev_box prev_fails <"$STALL_FILE" && [[ "$prev_box" == "$box" ]]; then
         printf '%s\n' "$box" >>"$PARKED_LIST" || return 1
         rm -f "$STALL_FILE"
         log "mbsync: parked $box: two attempts in a row stalled in it ($prev_fails, then $fails refused, $stored stored); see $PARKED_LIST"

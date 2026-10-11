@@ -95,6 +95,8 @@ check "dropped session, second attempt ok"    0 'attempt 2 of 3'                
 check "real error fails the run"              1 'mbsync failed'                       realerr ""
 check "killed mbsync fails the run"           1 'mbsync failed'                       killed  ""
 check "stalled folder gets parked"            0 'parked Bad Box'                      stall   ""
+check "PARK_AFTER=1 parks at the first stall" 0 'parked Bad Box: attempt stalled;;attempt 2 of 3' stall "" "-e PARK_AFTER=1"
+check "PARK_AFTER must be 1 or 2"             1 'PARK_AFTER must be 1 or 2'           refused "" "-e PARK_AFTER=3"
 check "INBOX is never parked"                 1 'INBOX is never parked'               inbox   ""
 check "refused letters again (for rewind-all)" 0 'all folders done; 3 refused'        refused ""
 # Needs the INBOX state the previous scenario left (the Other folder has none).
