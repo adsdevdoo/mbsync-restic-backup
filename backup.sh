@@ -227,7 +227,7 @@ sync_mail() {
 
     mkdir -p "$MAILDIR" "$STATE_DIR"
     # Leftovers of a killed run (the lock is ours).
-    rm -f "$STATE_DIR"/*.tmp.* "$MBSYNC_LOG".g* "$MBSYNC_RC_FILE".*
+    rm -f "$STATE_DIR"/*.tmp.* "$MBSYNC_LOG".g* "$MBSYNC_RC_FILE".* "$METRICS_DIR"/.mail_backup_*
     : >"$MBSYNC_LOG"
     touch "$PARKED_LIST" "$STALL_FILE" || return 1
 
@@ -281,6 +281,8 @@ sync_mail() {
         [[ "$more" == yes ]] || break
     done
     if [[ -n "$ticker" ]]; then
+        # Its sleep first: an orphaned sleep would hold the run's output open for up to PROGRESS_INTERVAL.
+        pkill -P "$ticker" 2>/dev/null
         kill "$ticker" 2>/dev/null
         wait "$ticker" 2>/dev/null
     fi
@@ -698,10 +700,15 @@ EOF
 # LETTERS, MAILDIR_BYTES, REPO_BYTES). Called after every attempt and every snapshot, good or not, so a long first
 # download shows its progress. A failed count must not fail the run: it becomes NaN.
 write_sizes() {
-    LETTERS="$(find "$MAILDIR" -type f \( -path '*/cur/*' -o -path '*/new/*' \) 2>/dev/null | wc -l)" || LETTERS=NaN
-    MAILDIR_BYTES="$(du -sb "$MAILDIR" 2>/dev/null | cut -f1)" || MAILDIR_BYTES=NaN
+    local counts
+
+    # One walk of the Maildir for both numbers (letters: files in cur/ and new/; bytes: all files).
+    counts="$(find "$MAILDIR" -type f -printf '%s %h\n' 2>/dev/null \
+        | gawk '{ b += $1; if ($2 ~ /\/(cur|new)$/) n++ } END { print n + 0, b + 0 }')" || counts=""
+    read -r LETTERS MAILDIR_BYTES <<<"$counts" || true
     REPO_BYTES="$(du -sb "$RESTIC_REPOSITORY" 2>/dev/null | cut -f1)" || REPO_BYTES=NaN
-    [[ -n "$MAILDIR_BYTES" ]] || MAILDIR_BYTES=NaN
+    [[ -n "${LETTERS:-}" ]] || LETTERS=NaN
+    [[ -n "${MAILDIR_BYTES:-}" ]] || MAILDIR_BYTES=NaN
     [[ -n "$REPO_BYTES" ]] || REPO_BYTES=NaN
 
     # Earlier versions kept these in mail_backup.prom; the same metric in two files makes node_exporter drop the
