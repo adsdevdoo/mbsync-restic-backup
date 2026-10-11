@@ -208,6 +208,9 @@ Useful alerts:
 
 ## Yandex 360 notes
 
+Step by step, with screenshots (in Russian): [docs/yandex-360.md](docs/yandex-360.md): paid plan, IMAP for the
+organization and the mailbox, app password.
+
 - **IMAP needs a paid plan.** Organizations without a paid plan can't use IMAP, and an organization admin can
   also switch IMAP off for everyone (the `enable_imap` mail setting). In both cases the user's mail settings say
   that mail clients can't be set up for this account.
