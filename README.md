@@ -199,6 +199,7 @@ Mount a node_exporter textfile collector directory at `/metrics` (see `compose.y
 | `mail_backup_last_failure_timestamp_seconds` | last failed run |
 | `mail_backup_letters`, `mail_backup_maildir_bytes`, `mail_backup_repository_bytes` | size now, updated after every mbsync attempt and snapshot (shows the progress of a long first download) |
 | `mail_backup_progress_timestamp_seconds` | last progress tick of a running sync (every `PROGRESS_INTERVAL`) |
+| `mail_backup_run_started_timestamp_seconds` | start of the last or the running run |
 | `mail_backup_unfetchable_messages`, `mail_backup_parked_folders` | refused letters, parked folders |
 | `mail_backup_copy_last_success_timestamp_seconds`, `…_copy_last_failure_…` | off-host copy |
 

@@ -778,6 +778,12 @@ main() {
     trap on_exit EXIT
     started="$(date +%s)"
     check_settings
+    # The current run's start, for a dashboard showing how long a running backup takes.
+    write_prom mail_backup_run.prom <<EOF || true
+# HELP mail_backup_run_started_timestamp_seconds When the last (or the running) backup run started.
+# TYPE mail_backup_run_started_timestamp_seconds gauge
+mail_backup_run_started_timestamp_seconds $started
+EOF
     check_secrets
     check_repository
     case "${1:-}" in

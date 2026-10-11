@@ -118,8 +118,9 @@ check "killed mbsync fails the run"           1 'mbsync failed'                 
 rm -f "$d/metrics/mail_backup_progress.prom"
 # Also proves the run does not hang waiting for the ticker.
 check "progress ticker during a slow sync"    0 'done:'                               slow    "" "-e PROGRESS_INTERVAL=1"
-if grep -q '^mail_backup_progress_timestamp_seconds [0-9]' "$d/metrics/mail_backup_progress.prom" 2>/dev/null; then
-  echo "ok   progress timestamp written"; else echo "FAIL progress timestamp written"; FAILED=$((FAILED + 1)); fi
+if grep -q '^mail_backup_progress_timestamp_seconds [0-9]' "$d/metrics/mail_backup_progress.prom" 2>/dev/null \
+  && grep -q '^mail_backup_run_started_timestamp_seconds [0-9]' "$d/metrics/mail_backup_run.prom" 2>/dev/null; then
+  echo "ok   progress and run start written"; else echo "FAIL progress and run start written"; FAILED=$((FAILED + 1)); fi
 check "stalled folder gets parked"            0 'parked Bad Box'                      stall   ""
 check "PARK_AFTER=1 parks at the first stall" 0 'parked Bad Box: attempt stalled;;attempt 2 of 3' stall "" "-e PARK_AFTER=1"
 check "PARK_AFTER must be 1 or 2"             1 'PARK_AFTER must be 1 or 2'           refused "" "-e PARK_AFTER=3"

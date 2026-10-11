@@ -33,7 +33,7 @@
  "panels": [
   {
    "type": "row",
-   "title": "Last run",
+   "title": "State",
    "id": 1,
    "collapsed": false,
    "gridPos": {
@@ -46,7 +46,7 @@
   },
   {
    "type": "stat",
-   "title": "Hours since last good run",
+   "title": "Sync",
    "datasource": {
     "type": "prometheus",
     "uid": "${datasource}"
@@ -64,702 +64,14 @@
       "type": "prometheus",
       "uid": "${datasource}"
      },
-     "expr": "(time() - max(mail_backup_last_success_timestamp_seconds)) / 3600",
+     "expr": "((time() - max(mail_backup_progress_timestamp_seconds) < 180) * 0 + 1) or vector(0)",
      "legendFormat": "",
      "refId": "D"
     }
    ],
    "options": {
     "colorMode": "background",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "h",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       },
-       {
-        "color": "red",
-        "value": 26
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": [],
-     "decimals": 1
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Last run failed",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 4,
-   "gridPos": {
-    "x": 4,
-    "y": 1,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "(max(mail_backup_last_failure_timestamp_seconds) > bool (max(mail_backup_last_success_timestamp_seconds) or vector(0))) or vector(0)",
-     "legendFormat": "",
-     "refId": "F"
-    }
-   ],
-   "options": {
-    "colorMode": "background",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "short",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       },
-       {
-        "color": "red",
-        "value": 1
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": [
-      {
-       "type": "value",
-       "options": {
-        "0": {
-         "text": "no"
-        },
-        "1": {
-         "text": "YES"
-        }
-       }
-      }
-     ]
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Letters",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 6,
-   "gridPos": {
-    "x": 8,
-    "y": 1,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "max(mail_backup_letters)",
-     "legendFormat": "",
-     "refId": "H"
-    }
-   ],
-   "options": {
-    "colorMode": "value",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "short",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": []
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Maildir",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 8,
-   "gridPos": {
-    "x": 12,
-    "y": 1,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "max(mail_backup_maildir_bytes)",
-     "legendFormat": "",
-     "refId": "J"
-    }
-   ],
-   "options": {
-    "colorMode": "value",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "bytes",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": []
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Repository",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 10,
-   "gridPos": {
-    "x": 16,
-    "y": 1,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "max(mail_backup_repository_bytes)",
-     "legendFormat": "",
-     "refId": "L"
-    }
-   ],
-   "options": {
-    "colorMode": "value",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "bytes",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": []
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Run duration",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 12,
-   "gridPos": {
-    "x": 20,
-    "y": 1,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "max(mail_backup_last_duration_seconds)",
-     "legendFormat": "",
-     "refId": "N"
-    }
-   ],
-   "options": {
-    "colorMode": "value",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "s",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": []
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Refused letters",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 14,
-   "gridPos": {
-    "x": 0,
-    "y": 5,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "max(mail_backup_unfetchable_messages)",
-     "legendFormat": "",
-     "refId": "P"
-    }
-   ],
-   "options": {
-    "colorMode": "background",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "short",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       },
-       {
-        "color": "yellow",
-        "value": 1
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": []
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Parked folders",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 16,
-   "gridPos": {
-    "x": 4,
-    "y": 5,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "max(mail_backup_parked_folders)",
-     "legendFormat": "",
-     "refId": "R"
-    }
-   ],
-   "options": {
-    "colorMode": "background",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "short",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       },
-       {
-        "color": "orange",
-        "value": 1
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": []
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Hours since off-host copy",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 18,
-   "gridPos": {
-    "x": 8,
-    "y": 5,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "(time() - max(mail_backup_copy_last_success_timestamp_seconds)) / 3600",
-     "legendFormat": "",
-     "refId": "T"
-    }
-   ],
-   "options": {
-    "colorMode": "background",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "h",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       },
-       {
-        "color": "red",
-        "value": 26
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": [],
-     "decimals": 1
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Last copy failed",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 20,
-   "gridPos": {
-    "x": 12,
-    "y": 5,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "(max(mail_backup_copy_last_failure_timestamp_seconds) > bool (max(mail_backup_copy_last_success_timestamp_seconds) or vector(0))) or vector(0)",
-     "legendFormat": "",
-     "refId": "V"
-    }
-   ],
-   "options": {
-    "colorMode": "background",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "short",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       },
-       {
-        "color": "red",
-        "value": 1
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": [
-      {
-       "type": "value",
-       "options": {
-        "0": {
-         "text": "no"
-        },
-        "1": {
-         "text": "YES"
-        }
-       }
-      }
-     ]
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Copy duration",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 22,
-   "gridPos": {
-    "x": 16,
-    "y": 5,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "max(mail_backup_copy_last_duration_seconds)",
-     "legendFormat": "",
-     "refId": "X"
-    }
-   ],
-   "options": {
-    "colorMode": "value",
-    "graphMode": "area",
-    "justifyMode": "center",
-    "textMode": "auto",
-    "reduceOptions": {
-     "calcs": [
-      "lastNotNull"
-     ],
-     "fields": "",
-     "values": false
-    }
-   },
-   "fieldConfig": {
-    "defaults": {
-     "unit": "s",
-     "thresholds": {
-      "mode": "absolute",
-      "steps": [
-       {
-        "color": "green",
-        "value": null
-       }
-      ]
-     },
-     "color": {
-      "mode": "thresholds"
-     },
-     "mappings": []
-    },
-    "overrides": []
-   }
-  },
-  {
-   "type": "stat",
-   "title": "Sync running",
-   "datasource": {
-    "type": "prometheus",
-    "uid": "${datasource}"
-   },
-   "id": 24,
-   "gridPos": {
-    "x": 20,
-    "y": 5,
-    "w": 4,
-    "h": 4
-   },
-   "targets": [
-    {
-     "datasource": {
-      "type": "prometheus",
-      "uid": "${datasource}"
-     },
-     "expr": "(time() - max(mail_backup_progress_timestamp_seconds) < bool 180) or vector(0)",
-     "legendFormat": "",
-     "refId": "Z"
-    }
-   ],
-   "options": {
-    "colorMode": "background",
-    "graphMode": "area",
+    "graphMode": "none",
     "justifyMode": "center",
     "textMode": "auto",
     "reduceOptions": {
@@ -794,10 +106,339 @@
        "type": "value",
        "options": {
         "0": {
-         "text": "no"
+         "text": "idle"
         },
         "1": {
-         "text": "YES"
+         "text": "running"
+        }
+       }
+      }
+     ]
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Run time (running, else last good)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 4,
+   "gridPos": {
+    "x": 4,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "((time() - max(mail_backup_run_started_timestamp_seconds)) and (time() - max(mail_backup_progress_timestamp_seconds) < 180)) or max(mail_backup_last_duration_seconds)",
+     "legendFormat": "",
+     "refId": "F"
+    }
+   ],
+   "options": {
+    "colorMode": "value",
+    "graphMode": "none",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "dtdurations",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "never"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Last good run",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 6,
+   "gridPos": {
+    "x": 8,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "time() - max(mail_backup_last_success_timestamp_seconds)",
+     "legendFormat": "",
+     "refId": "H"
+    }
+   ],
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "dtdurations",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 93600
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "never"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Last run failed",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 8,
+   "gridPos": {
+    "x": 12,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "(max(mail_backup_last_failure_timestamp_seconds) > bool (max(mail_backup_last_success_timestamp_seconds) or vector(0))) or vector(0)",
+     "legendFormat": "",
+     "refId": "J"
+    }
+   ],
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "no",
+         "color": "green"
+        },
+        "1": {
+         "text": "YES",
+         "color": "red"
+        }
+       }
+      }
+     ]
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Off-host copy",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 10,
+   "gridPos": {
+    "x": 16,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "time() - max(mail_backup_copy_last_success_timestamp_seconds)",
+     "legendFormat": "",
+     "refId": "L"
+    }
+   ],
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "dtdurations",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 93600
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "never"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Last copy failed",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 12,
+   "gridPos": {
+    "x": 20,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "(max(mail_backup_copy_last_failure_timestamp_seconds) > bool (max(mail_backup_copy_last_success_timestamp_seconds) or vector(0))) or vector(0)",
+     "legendFormat": "",
+     "refId": "N"
+    }
+   ],
+   "options": {
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "no",
+         "color": "green"
+        },
+        "1": {
+         "text": "YES",
+         "color": "red"
         }
        }
       }
@@ -808,12 +449,388 @@
   },
   {
    "type": "row",
-   "title": "Trends",
-   "id": 26,
+   "title": "Mailbox",
+   "id": 14,
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 9,
+    "y": 5,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "type": "stat",
+   "title": "Letters",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 15,
+   "gridPos": {
+    "x": 0,
+    "y": 6,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max(mail_backup_letters)",
+     "legendFormat": "",
+     "refId": "Q"
+    }
+   ],
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "—"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Letters per minute",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 17,
+   "gridPos": {
+    "x": 4,
+    "y": 6,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "deriv(max(mail_backup_letters)[15m:1m]) * 60",
+     "legendFormat": "",
+     "refId": "S"
+    }
+   ],
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "decimals": 0,
+     "noValue": "—"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Maildir",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 19,
+   "gridPos": {
+    "x": 8,
+    "y": 6,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max(mail_backup_maildir_bytes)",
+     "legendFormat": "",
+     "refId": "U"
+    }
+   ],
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "—"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Repository",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 21,
+   "gridPos": {
+    "x": 12,
+    "y": 6,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max(mail_backup_repository_bytes)",
+     "legendFormat": "",
+     "refId": "W"
+    }
+   ],
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "—"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Refused letters",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 23,
+   "gridPos": {
+    "x": 16,
+    "y": 6,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max(mail_backup_unfetchable_messages)",
+     "legendFormat": "",
+     "refId": "Y"
+    }
+   ],
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "0"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Parked folders",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+   },
+   "id": 25,
+   "gridPos": {
+    "x": 20,
+    "y": 6,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "${datasource}"
+     },
+     "expr": "max(mail_backup_parked_folders)",
+     "legendFormat": "",
+     "refId": "A"
+    }
+   ],
+   "options": {
+    "colorMode": "background",
+    "graphMode": "area",
+    "justifyMode": "center",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     },
+     "mappings": [],
+     "noValue": "0"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "row",
+   "title": "Trends",
+   "id": 27,
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 10,
     "w": 24,
     "h": 1
    },
@@ -826,10 +843,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 28,
+   "id": 29,
    "gridPos": {
     "x": 0,
-    "y": 10,
+    "y": 11,
     "w": 12,
     "h": 8
    },
@@ -841,7 +858,7 @@
      },
      "expr": "max(mail_backup_letters)",
      "legendFormat": "letters",
-     "refId": "B"
+     "refId": "C"
     }
    ],
    "options": {
@@ -861,7 +878,7 @@
    },
    "fieldConfig": {
     "defaults": {
-     "unit": "short",
+     "unit": "locale",
      "color": {
       "mode": "palette-classic"
      },
@@ -891,10 +908,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 30,
+   "id": 31,
    "gridPos": {
     "x": 12,
-    "y": 10,
+    "y": 11,
     "w": 12,
     "h": 8
    },
@@ -906,7 +923,7 @@
      },
      "expr": "deriv(max(mail_backup_letters)[15m:1m]) * 60",
      "legendFormat": "letters/min",
-     "refId": "D"
+     "refId": "E"
     }
    ],
    "options": {
@@ -957,10 +974,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 33,
+   "id": 34,
    "gridPos": {
     "x": 0,
-    "y": 18,
+    "y": 19,
     "w": 24,
     "h": 8
    },
@@ -972,7 +989,7 @@
      },
      "expr": "max(mail_backup_maildir_bytes)",
      "legendFormat": "Maildir",
-     "refId": "F"
+     "refId": "G"
     },
     {
      "datasource": {
@@ -981,7 +998,7 @@
      },
      "expr": "max(mail_backup_repository_bytes)",
      "legendFormat": "repository",
-     "refId": "G"
+     "refId": "H"
     }
    ],
    "options": {
@@ -1031,10 +1048,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 35,
+   "id": 36,
    "gridPos": {
     "x": 0,
-    "y": 26,
+    "y": 27,
     "w": 12,
     "h": 8
    },
@@ -1046,7 +1063,7 @@
      },
      "expr": "max(mail_backup_unfetchable_messages)",
      "legendFormat": "refused",
-     "refId": "I"
+     "refId": "J"
     }
    ],
    "options": {
@@ -1096,10 +1113,10 @@
     "type": "prometheus",
     "uid": "${datasource}"
    },
-   "id": 37,
+   "id": 38,
    "gridPos": {
     "x": 12,
-    "y": 26,
+    "y": 27,
     "w": 12,
     "h": 8
    },
@@ -1111,7 +1128,7 @@
      },
      "expr": "max(mail_backup_parked_folders)",
      "legendFormat": "parked",
-     "refId": "K"
+     "refId": "L"
     }
    ],
    "options": {
