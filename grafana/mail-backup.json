@@ -64,7 +64,7 @@
       "type": "prometheus",
       "uid": "${datasource}"
      },
-     "expr": "((max(mail_backup_run_started_timestamp_seconds) > (max(mail_backup_run_finished_timestamp_seconds) or vector(0))) * 0 + 1) or vector(0)",
+     "expr": "((max(mail_backup_run_started_timestamp_seconds) > (max(mail_backup_run_finished_timestamp_seconds) or vector(0))) and (time() - max(mail_backup_run_started_timestamp_seconds) < 12 * 3600) * 0 + 1) or vector(0)",
      "legendFormat": "",
      "refId": "D"
     }
@@ -138,7 +138,7 @@
       "type": "prometheus",
       "uid": "${datasource}"
      },
-     "expr": "((time() - max(mail_backup_run_started_timestamp_seconds)) and (max(mail_backup_run_started_timestamp_seconds) > (max(mail_backup_run_finished_timestamp_seconds) or vector(0)))) or max(mail_backup_last_duration_seconds)",
+     "expr": "((time() - max(mail_backup_run_started_timestamp_seconds)) and (max(mail_backup_run_started_timestamp_seconds) > (max(mail_backup_run_finished_timestamp_seconds) or vector(0))) and (time() - max(mail_backup_run_started_timestamp_seconds) < 12 * 3600)) or max(mail_backup_last_duration_seconds)",
      "legendFormat": "",
      "refId": "F"
     }
