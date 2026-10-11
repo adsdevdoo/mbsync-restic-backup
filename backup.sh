@@ -30,8 +30,9 @@
 # Parked folders. Until a folder is done, every attempt asks again for its refused letters from the lowest UID. If
 # the server refuses a block longer than a session lasts, the folder never gets done. A folder is parked (left out
 # of mbsync) when PARK_AFTER attempts in a row (2 by default, or 1) were cut off in it with at least PARK_FAILURES
-# refused letters and more than PARK_RATIO times as many as letters stored from it in that attempt. NEVER_PARK folders are not parked: the run
-# fails instead. The folder keeps its journal; remove its line from PARKED_LIST to take it back.
+# refused letters and more than PARK_RATIO times as many as letters stored from it in that attempt. NEVER_PARK
+# folders are not parked: the run fails instead. The folder keeps its journal; remove its line from PARKED_LIST to
+# take it back.
 #
 set -euo pipefail
 # The Maildir is plain text mail: readable by root only.
