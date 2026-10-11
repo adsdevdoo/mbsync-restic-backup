@@ -17,7 +17,10 @@ Limits: implicit TLS only (port 993, `TLSType IMAPS`) and password login only (`
 ## What a run does
 
 1. **Sync.** mbsync downloads new letters from every folder into `DATA_DIR/maildir`. If the server drops the
-   connection, mbsync is started again, up to 3 times per run, and continues where it stopped.
+   connection, mbsync is started again, up to 3 times per run, and continues where it stopped. With `PARALLEL=N`
+   the folders are split into N groups, one session each, all at the same time; useful when the server is slow to
+   answer (each session has its own queue). Servers limit simultaneous IMAP connections (Gmail ~15, Yahoo 8,
+   iCloud 4; Yandex doesn't publish its limit): start with 2.
 2. **Snapshot.** restic snapshots the Maildir into `DATA_DIR/restic`. Retention: 30 daily, 8 weekly, 24 monthly.
    Once a week `restic check` reads 10% of the data. If the sync failed, the snapshot is still taken, but retention
    is skipped and the run counts as failed.
@@ -67,6 +70,7 @@ All settings are in `.env`; see `.env.example`. The main ones:
 | `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER` | —, 993, — | the mailbox; password in `secrets/imap_password` |
 | `SCHEDULE`, `TZ` | `30 4 * * *`, UTC | when to run |
 | `KEEP_DAILY`, `KEEP_WEEKLY`, `KEEP_MONTHLY` | 30, 8, 24 | snapshot retention |
+| `PARALLEL` | 1 | mbsync sessions at the same time, each on its own share of the folders (1-8) |
 | `PIPELINE_DEPTH` | 8 | IMAP commands in flight |
 | `MBSYNC_ATTEMPTS` | 3 | mbsync restarts per run after a dropped connection |
 | `REFUSED_PATTERN` | any text | which server answers to a letter fetch count as a refused letter (regex) |

@@ -24,11 +24,18 @@ E="-e IMAP_HOST=imap.example -e IMAP_USER=u@example"
 V="$E -v $d/data:/data -v $d/secrets:/run/secrets:ro -v $d/metrics:/metrics -v $d/bin/mbsync:/usr/local/bin/mbsync:ro"
 FAILED=0
 
-# The stub: argv is "-V -c <config> mail"; the scenario is in /data/scenario.
+# The stub: argv is "-V -c <config> mail" for a sync and "-c <config> -l mail" for listing the folders; the
+# scenario is in /data/scenario.
 cat >"$d/bin/mbsync" <<'EOF'
 #!/bin/bash
-cfg="$3"
 s=$(cat /data/scenario)
+if [ "$3" = "-l" ]; then
+  case $s in
+    parallel) printf 'A\nB\nC\nD\n'; exit 0;;
+    *) exit 1;;
+  esac
+fi
+cfg="$3"
 pat=$(grep '^Patterns' "$cfg")
 box() { mkdir -p "/data/maildir/$1/cur" "/data/maildir/$1/new"; echo "Opening far side box $1..."; echo "Synchronizing..."; }
 fail() {
@@ -56,6 +63,17 @@ case $s in
     box "Bad Box"; for u in $(seq 1000 1349); do fail $u; done
     echo "IMAP error: unexpected BYE response: problems with connection" >&2; sum; exit 1;;
   inbox) box INBOX; for u in $(seq 1 400); do fail $u; done; echo "IMAP error: unexpected BYE response: x" >&2; sum; exit 1;;
+  parallel)
+    # Sync the folders named in Patterns; B has refused letters; the session with C drops once.
+    rc=0
+    for f in $(echo "$pat" | grep -oE '"[A-Z]"' | tr -d '"'); do
+      box "$f"
+      [ "$f" = B ] && { fail 21; fail 22; rc=1; }
+      if [ "$f" = C ] && [ ! -f /data/c-dropped ]; then
+        touch /data/c-dropped; echo "IMAP error: unexpected BYE response: session lifetime exceeded" >&2; sum; exit 1
+      fi
+    done
+    echo "SESSION $pat"; sum; exit $rc;;
 esac
 EOF
 chmod +x "$d/bin/mbsync"
@@ -102,6 +120,9 @@ check "refused letters again (for rewind-all)" 0 'all folders done; 3 refused'  
 # Needs the INBOX state the previous scenario left (the Other folder has none).
 check "rewind-all rewinds every state"        0 'MaxPulledUid set to 0 in 1 folders;;STATE MaxPulledUid 0' rewound rewind-all "" keep
 check "unknown command"                       2 'unknown command'                     refused bogus
+check "two parallel sessions, one retried"    0 '4 folders on the server, 2 sessions;;\[1\] SESSION Patterns "A" "C";;\[2\] SESSION Patterns "B" "D";;1 of 2 sessions;;all folders done; 2 refused' parallel "" "-e PARALLEL=2"
+check "listing fails: one session"            0 'could not list the folders; one session' refused "" "-e PARALLEL=2"
+check "PARALLEL must be 1-8"                  1 'PARALLEL must be 1-8'                refused "" "-e PARALLEL=9"
 check "REFUSED_PATTERN mismatch fails"        1 'mbsync failed'                       refused "" "-e REFUSED_PATTERN=\\[UNAVAILABLE\\]"
 check "REFUSED_MAX exceeded fails"            1 'more than REFUSED_MAX'               refused "" "-e REFUSED_MAX=1"
 check "COPY_TARGET without colon"             1 'COPY_TARGET must be'                 refused "" "-e COPY_TARGET=nocolon"

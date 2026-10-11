@@ -66,5 +66,7 @@ reason) or left for later. Check claims against facts (logs, the mbsync state fi
 - Sessions end after about 30 minutes (`BYE … session lifetime exceeded`); the first download of a big mailbox
   takes many runs.
 - `PipelineDepth` above 1 barely helped against refusals: Yandex answered one connection's commands in order.
+  Parallel sessions (`PARALLEL`) give it several queues instead. Yandex doesn't publish its limit on simultaneous
+  IMAP connections.
 - Refused letters: `[UNAVAILABLE] … backend error`. In October 2026 Yandex lost three data centers; some letters
   came back on a later try (363 of 366 in one retry of an INBOX), whole stretches of archive folders did not.

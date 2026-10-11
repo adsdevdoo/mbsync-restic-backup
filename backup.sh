@@ -19,6 +19,11 @@
 # lifetime exceeded"). After a dropped connection mbsync is started again, up to MBSYNC_ATTEMPTS times per run; it
 # continues where it stopped.
 #
+# Parallel sessions. With PARALLEL > 1 the folders the server lists (parked ones left out) are dealt round-robin into
+# that many groups, each synced by its own mbsync at the same time. A folder belongs to one group only, so no two
+# processes touch the same folder state. A server answering one connection's commands in order (refusals ~0.8 s
+# each on Yandex) gets that many queues instead of one.
+#
 # Unfetchable letters. A server may refuse single letters (Yandex 360: "[UNAVAILABLE] … backend error"). mbsync
 # skips them and exits 1. A run whose only errors are refused letters is a success; the letters are listed in
 # UNFETCHABLE_LIST. mbsync never asks for them again by itself: it only loads UIDs above MaxPulledUid of the folder
@@ -65,6 +70,9 @@ PARK_FAILURES="${PARK_FAILURES:-300}"
 PARK_RATIO="${PARK_RATIO:-2}"
 # Stalled attempts in a row (in the same folder) before it is parked: 2 waits for a confirmation, 1 parks at once.
 PARK_AFTER="${PARK_AFTER:-2}"
+# mbsync sessions at the same time, each on its own share of the folders (1-8). Mind the server's limit on
+# simultaneous IMAP connections.
+PARALLEL="${PARALLEL:-1}"
 # Space-separated, so a folder with a space in its name cannot be listed here; empty = none.
 read -r -a NEVER_PARK <<<"${NEVER_PARK-INBOX Sent Drafts}"
 # yes: wait for a running backup instead of skipping (for loops of manual runs).
@@ -88,11 +96,12 @@ UNFETCHABLE_LIST="$STATE_DIR/unfetchable.tsv"
 RECOVERED_LIST="$STATE_DIR/unfetchable-recovered.tsv"
 # Parked folders, one per line.
 PARKED_LIST="$STATE_DIR/parked.txt"
-# The last attempt cut off in a folder with many refusals: folder <TAB> refused letters.
+# The last stalled attempt per folder, waiting for a second one (PARK_AFTER=2): folder <TAB> refused letters.
 STALL_FILE="$STATE_DIR/stall.tsv"
 LOCK_FILE="/data/.backup.lock"
-# Full mbsync -V output of the last run, all attempts.
+# Full mbsync -V output of the last run, all attempts and sessions (.g<i>: one session's attempt, while it runs).
 MBSYNC_LOG="/data/.mbsync-last.log"
+# mbsync configs, one per session: /tmp/mbsyncrc.<i> (.list: the one for listing the folders).
 MBSYNC_RC_FILE="/tmp/mbsyncrc"
 # Touched before each attempt: letters stored in it are the files changed after this.
 ATTEMPT_MARK="/tmp/mbsync-attempt.mark"
@@ -167,13 +176,17 @@ check_settings() {
             exit 1
         fi
     done
-    for v in IMAP_PORT PIPELINE_DEPTH MBSYNC_ATTEMPTS KEEP_DAILY KEEP_WEEKLY KEEP_MONTHLY PARK_FAILURES PARK_RATIO PARK_AFTER REFUSED_MAX COPY_PORT; do
+    for v in IMAP_PORT PIPELINE_DEPTH MBSYNC_ATTEMPTS KEEP_DAILY KEEP_WEEKLY KEEP_MONTHLY PARK_FAILURES PARK_RATIO PARK_AFTER PARALLEL REFUSED_MAX COPY_PORT; do
         # No leading zeros: bash arithmetic would read 08 as octal.
         if [[ ! "${!v}" =~ ^(0|[1-9][0-9]*)$ ]]; then
             log "ERROR: $v must be a number, got '${!v}'."
             exit 1
         fi
     done
+    if [[ ! "$PARALLEL" =~ ^[1-8]$ ]]; then
+        log "ERROR: PARALLEL must be 1-8, got '$PARALLEL'."
+        exit 1
+    fi
     if [[ ! "$PARK_AFTER" =~ ^[12]$ ]]; then
         log "ERROR: PARK_AFTER must be 1 or 2, got '$PARK_AFTER'."
         exit 1
@@ -203,33 +216,62 @@ check_repository() {
 
 
 # sync_mail : 0 when mbsync went through every folder (refused letters aside), 1 otherwise (the snapshot is taken
-# either way). A failure in keeping the lists is logged but does not decide the run.
+# either way). The folders are split into PARALLEL groups, one mbsync session each, run at the same time; after a
+# dropped connection only the unfinished groups run again. A failure in keeping the lists is logged but does not
+# decide the run.
 sync_mail() {
-    local attempt attempt_log="$MBSYNC_LOG.attempt" complete=no
+    local attempt i n glog more state=()
 
     mkdir -p "$MAILDIR" "$STATE_DIR"
     # Leftovers of a killed run (the lock is ours).
-    rm -f "$STATE_DIR"/*.tmp.* "$attempt_log"
+    rm -f "$STATE_DIR"/*.tmp.* "$MBSYNC_LOG".g* "$MBSYNC_RC_FILE".*
     : >"$MBSYNC_LOG"
+    touch "$PARKED_LIST" "$STALL_FILE" || return 1
 
+    plan_groups
+    n=${#GROUP_PATTERNS[@]}
+    # state[i]: "" = to run, done, failed (an error another attempt would just repeat).
     for (( attempt = 1; attempt <= MBSYNC_ATTEMPTS; attempt++ )); do
-        build_mbsyncrc || { log "ERROR: could not write $MBSYNC_RC_FILE."; break; }
         touch "$ATTEMPT_MARK"
-        log "mbsync: pulling all folders (attempt $attempt of $MBSYNC_ATTEMPTS)"
-        run_mbsync "$attempt_log"
-        cat "$attempt_log" >>"$MBSYNC_LOG"
-        if mbsync_complete "$attempt_log"; then
-            complete=yes
-            rm -f "$STALL_FILE"
-            break
-        fi
-        check_stall "$attempt_log" || log "ERROR: could not check the attempt for a stalled folder."
-        # Only a dropped connection is worth another attempt; any other error would just repeat.
-        if ! grep -qE "$CONNECTION_DROP" "$attempt_log"; then
-            break
-        fi
+        log "mbsync: pulling (attempt $attempt of $MBSYNC_ATTEMPTS, $(pending_groups) of $n sessions)"
+        for (( i = 0; i < n; i++ )); do
+            [[ -z "${state[i]:-}" ]] || continue
+            if ! build_mbsyncrc "$MBSYNC_RC_FILE.$i" "${GROUP_PATTERNS[i]}"; then
+                log "ERROR: could not write $MBSYNC_RC_FILE.$i."
+                state[i]=failed
+                continue
+            fi
+            run_group "$i" &
+        done
+        wait
+
+        more=no
+        for (( i = 0; i < n; i++ )); do
+            [[ -z "${state[i]:-}" ]] || continue
+            glog="$MBSYNC_LOG.g$i"
+            cat "$glog" >>"$MBSYNC_LOG"
+            read -r MBSYNC_RC TEE_RC <"$glog.rc" || { MBSYNC_RC=255; TEE_RC=255; }
+            if mbsync_complete "$glog"; then
+                state[i]=done
+                continue
+            fi
+            check_stall "$glog" || log "ERROR: could not check session $((i + 1)) for a stalled folder."
+            # Only a dropped connection is worth another attempt; any other error would just repeat.
+            if grep -qE "$CONNECTION_DROP" "$glog"; then
+                more=yes
+            else
+                state[i]=failed
+            fi
+        done
+        [[ "$more" == yes ]] || break
     done
-    rm -f "$attempt_log"
+    rm -f "$MBSYNC_LOG".g* "$MBSYNC_RC_FILE".*
+
+    local complete=yes
+    for (( i = 0; i < n; i++ )); do
+        [[ "${state[i]:-}" == done ]] || complete=no
+    done
+    [[ "$complete" == yes ]] && : >"$STALL_FILE"
 
     update_unfetchable || log "ERROR: could not update $UNFETCHABLE_LIST; it is left as it was."
 
@@ -261,13 +303,52 @@ quote() {
 }
 
 
-# build_mbsyncrc : writes the mbsync config from the settings, with !"<folder>" in Patterns for each parked folder.
+# pending_groups : how many groups the coming attempt runs (reads state from sync_mail).
+pending_groups() {
+    local i c=0
+
+    for (( i = 0; i < n; i++ )); do
+        [[ -n "${state[i]:-}" ]] || c=$((c + 1))
+    done
+    echo "$c"
+}
+
+
+# plan_groups : GROUP_PATTERNS, one mbsync Patterns value per session. PARALLEL=1: one session, all folders ("*").
+# Otherwise the folders mbsync lists on the server, parked ones left out, dealt round-robin in listing order (runs
+# of similar folders end up in different sessions). If the list cannot be had, one session.
+plan_groups() {
+    local names
+
+    GROUP_PATTERNS=("*")
+    (( PARALLEL > 1 )) || return 0
+    if ! build_mbsyncrc "$MBSYNC_RC_FILE.list" "*" \
+        || ! names="$(mbsync -c "$MBSYNC_RC_FILE.list" -l mail 2>/dev/null)" || [[ -z "$names" ]]; then
+        log "mbsync: could not list the folders; one session this run"
+        return 0
+    fi
+    mapfile -t GROUP_PATTERNS < <(printf '%s\n' "$names" | P="$PARKED_LIST" N="$PARALLEL" gawk '
+        BEGIN { while ((getline f < ENVIRON["P"]) > 0) parked[f] = 1 }
+        NF && !($0 in parked) {
+            g = k++ % ENVIRON["N"]
+            gsub(/\\/, "\\\\\\\\"); gsub(/"/, "\\\"")
+            p[g] = p[g] " \"" $0 "\""
+        }
+        END { for (i = 0; i < ENVIRON["N"]; i++) if (p[i] != "") print substr(p[i], 2) }')
+    if (( ${#GROUP_PATTERNS[@]} == 0 )); then
+        GROUP_PATTERNS=("*")
+    fi
+    log "mbsync: $(printf '%s\n' "$names" | gawk 'NF' | wc -l) folders on the server, ${#GROUP_PATTERNS[@]} sessions"
+}
+
+
+# build_mbsyncrc <file> <patterns> : writes an mbsync config from the settings; Patterns is <patterns>, then
+# EXTRA_PATTERNS, then !"<folder>" for each parked folder (the last match wins).
 build_mbsyncrc() {
     local exclude
 
-    touch "$PARKED_LIST" || return 1
     exclude="$(gawk 'NF { gsub(/\\/, "\\\\\\\\"); gsub(/"/, "\\\""); printf " !\"%s\"", $0 }' "$PARKED_LIST")" || return 1
-    cat >"$MBSYNC_RC_FILE" <<EOF
+    cat >"$1" <<EOF
 IMAPAccount remote
 Host $(quote "$IMAP_HOST")
 Port $IMAP_PORT
@@ -290,7 +371,7 @@ SubFolders Verbatim
 Channel mail
 Far :remote:
 Near :local:
-Patterns *${EXTRA_PATTERNS:+ $EXTRA_PATTERNS}$exclude
+Patterns $2${EXTRA_PATTERNS:+ $EXTRA_PATTERNS}$exclude
 Create Near
 Remove None
 Expunge None
@@ -301,18 +382,35 @@ EOF
 }
 
 
-# run_mbsync <log> : one mbsync run. The raw output goes to <log>; the console gets it timestamped and without the
-# per-folder chatter. Sets MBSYNC_RC and TEE_RC.
-run_mbsync() {
-    local rcs
+# run_group <i> : one mbsync session with MBSYNC_RC_FILE.<i>. The raw output goes to MBSYNC_LOG.g<i>, the exit
+# codes of mbsync and tee to MBSYNC_LOG.g<i>.rc; the console gets the output timestamped, without the per-folder
+# chatter, prefixed with the session number when there are several. Runs in the background.
+run_group() {
+    local rcs prefix=""
 
+    (( PARALLEL > 1 )) && prefix="[$(( $1 + 1 ))] "
     set +e
-    mbsync -V -c "$MBSYNC_RC_FILE" mail 2>&1 | tee "$1" | grep --line-buffered -vE "$MBSYNC_CHATTER" \
-        | gawk '{ print strftime("%Y-%m-%dT%H:%M:%SZ", systime(), 1), $0; fflush() }'
+    mbsync -V -c "$MBSYNC_RC_FILE.$1" mail 2>&1 | tee "$MBSYNC_LOG.g$1" | grep --line-buffered -vE "$MBSYNC_CHATTER" \
+        | P="$prefix" gawk '{ print strftime("%Y-%m-%dT%H:%M:%SZ", systime(), 1), ENVIRON["P"] $0; fflush() }'
     rcs=("${PIPESTATUS[@]}")
-    set -e
-    MBSYNC_RC=${rcs[0]}
-    TEE_RC=${rcs[1]}
+    echo "${rcs[0]} ${rcs[1]}" >"$MBSYNC_LOG.g$1.rc"
+}
+
+
+# stall_get <folder> : refused letters of the last stalled attempt in that folder, or nothing.
+stall_get() {
+    F="$1" gawk -F'\t' '$1 == ENVIRON["F"] { print $2 }' "$STALL_FILE" 2>/dev/null
+}
+
+
+# stall_set <folder> <refused> : records a stalled attempt in that folder; stall_set <folder> forgets it.
+stall_set() {
+    local tmp
+
+    tmp="$(mktemp "$STATE_DIR/stall.tmp.XXXXXX")" || return 1
+    F="$1" gawk -F'\t' '$1 != ENVIRON["F"]' "$STALL_FILE" 2>/dev/null >"$tmp"
+    [[ -z "${2:-}" ]] || printf '%s\t%s\n' "$1" "$2" >>"$tmp"
+    mv "$tmp" "$STALL_FILE"
 }
 
 
@@ -346,15 +444,12 @@ refused_letters() {
 }
 
 
-# check_stall <attempt log> : after an attempt cut off by a dropped connection, parks the folder it was cut off in
-# when the previous cut-off attempt (this run or an earlier one) ended in the same folder and both were stalled.
+# check_stall <session log> : after a session cut off by a dropped connection, parks the folder it was cut off in
+# when it was stalled there PARK_AFTER times in a row (stall.tsv keeps the last stall per folder, across runs).
 check_stall() {
-    local box fails stored prev_box prev_fails never
+    local box fails stored prev_fails never
 
-    if ! grep -qE "$CONNECTION_DROP" "$1"; then
-        rm -f "$STALL_FILE"
-        return 0
-    fi
+    grep -qE "$CONNECTION_DROP" "$1" || return 0
     box="$(gawk '/^Opening far side box / { b = $0; sub(/^Opening far side box /, "", b); sub(/\.\.\.$/, "", b) } END { print b }' "$1")" \
         || return 1
     [[ -n "$box" ]] || return 0
@@ -366,33 +461,34 @@ check_stall() {
     # Without its directory the progress check below would count 0 and park a folder that is moving.
     if [[ ! -d "$MAILDIR/$box" ]]; then
         log "ERROR: no directory $MAILDIR/$box for folder $box; not parked (folder name and directory differ?)"
-        rm -f "$STALL_FILE"
+        stall_set "$box"
         return 0
     fi
     # Letters stored in that folder itself in this attempt (ctime: mbsync sets mtime to the arrival date).
     stored="$(find "$MAILDIR/$box/cur" "$MAILDIR/$box/new" -mindepth 1 -maxdepth 1 -type f -cnewer "$ATTEMPT_MARK" 2>/dev/null | wc -l)"
 
     if (( fails < PARK_FAILURES || fails <= PARK_RATIO * stored )); then
-        rm -f "$STALL_FILE"
+        stall_set "$box"
         return 0
     fi
     for never in "${NEVER_PARK[@]}"; do
         if [[ "$box" == "$never" ]]; then
             log "mbsync: attempt stalled in $box ($fails refused, $stored stored); $box is never parked"
-            rm -f "$STALL_FILE"
+            stall_set "$box"
             return 0
         fi
     done
-    if (( PARK_AFTER <= 1 )); then
+    prev_fails="$(stall_get "$box")"
+    if (( PARK_AFTER <= 1 )) || [[ -n "$prev_fails" ]]; then
         printf '%s\n' "$box" >>"$PARKED_LIST" || return 1
-        rm -f "$STALL_FILE"
-        log "mbsync: parked $box: attempt stalled in it ($fails refused, $stored stored); see $PARKED_LIST"
-    elif [[ -f "$STALL_FILE" ]] && IFS=$'\t' read -r prev_box prev_fails <"$STALL_FILE" && [[ "$prev_box" == "$box" ]]; then
-        printf '%s\n' "$box" >>"$PARKED_LIST" || return 1
-        rm -f "$STALL_FILE"
-        log "mbsync: parked $box: two attempts in a row stalled in it ($prev_fails, then $fails refused, $stored stored); see $PARKED_LIST"
+        stall_set "$box"
+        if (( PARK_AFTER <= 1 )); then
+            log "mbsync: parked $box: attempt stalled in it ($fails refused, $stored stored); see $PARKED_LIST"
+        else
+            log "mbsync: parked $box: two attempts in a row stalled in it ($prev_fails, then $fails refused, $stored stored); see $PARKED_LIST"
+        fi
     else
-        printf '%s\t%s\n' "$box" "$fails" >"$STALL_FILE" || return 1
+        stall_set "$box" "$fails" || return 1
         log "mbsync: attempt stalled in $box ($fails refused, $stored stored); parked if the next one is too"
     fi
 }
