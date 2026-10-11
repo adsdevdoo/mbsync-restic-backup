@@ -1,5 +1,14 @@
 # mbsync-restic-backup
 
+[![build](https://github.com/adsdevdoo/mbsync-restic-backup/actions/workflows/build.yml/badge.svg)](https://github.com/adsdevdoo/mbsync-restic-backup/actions/workflows/build.yml)
+[![ghcr.io](https://img.shields.io/badge/ghcr.io-adsdevdoo%2Fmbsync--restic--backup-blue?logo=github)](https://github.com/adsdevdoo/mbsync-restic-backup/pkgs/container/mbsync-restic-backup)
+[![Docker Hub](https://img.shields.io/docker/v/adsdevdoo/mbsync-restic-backup?sort=semver&logo=docker&label=docker%20hub)](https://hub.docker.com/r/adsdevdoo/mbsync-restic-backup)
+[![Docker pulls](https://img.shields.io/docker/pulls/adsdevdoo/mbsync-restic-backup?logo=docker)](https://hub.docker.com/r/adsdevdoo/mbsync-restic-backup)
+[![image size](https://img.shields.io/docker/image-size/adsdevdoo/mbsync-restic-backup/latest?logo=docker)](https://hub.docker.com/r/adsdevdoo/mbsync-restic-backup)
+![platforms](https://img.shields.io/badge/platforms-amd64%20%7C%20arm64-lightgrey)
+[![license](https://img.shields.io/github/license/adsdevdoo/mbsync-restic-backup)](LICENSE)
+[![last commit](https://img.shields.io/github/last-commit/adsdevdoo/mbsync-restic-backup)](https://github.com/adsdevdoo/mbsync-restic-backup/commits/main)
+
 Daily backup of one IMAP mailbox, in a single Docker container.
 
 [mbsync](https://isync.sourceforge.io/) pulls every folder into a local Maildir, and
@@ -30,7 +39,11 @@ The scheduler (supercronic) runs this daily at 04:30 by default. Two runs never 
 
 ## Install
 
-You need Docker with Compose, and a directory for the data.
+You need Docker with Compose, and a directory for the data. The image is published for amd64 and arm64 as
+`ghcr.io/adsdevdoo/mbsync-restic-backup` and `adsdevdoo/mbsync-restic-backup` (Docker Hub), tagged `latest`,
+by full commit SHA, and by version (`1.2.3`, `1.2`) for releases. `compose.yml` runs `latest`; set `IMAGE` in `.env`
+to pin a commit SHA (a deployment that changes only when you decide) or to your own build
+(`docker build -t mbsync-restic-backup:local .`, then `IMAGE=mbsync-restic-backup:local`).
 
 ```sh
 git clone https://github.com/adsdevdoo/mbsync-restic-backup.git
@@ -41,7 +54,7 @@ read -rs p && printf '%s' "$p" > secrets/imap_password; unset p     # type the I
 head -c 32 /dev/urandom | base64 > secrets/restic_password
 chmod 600 secrets/*
 mkdir -p /srv/mail-backup          # the DATA_DIR from .env
-docker compose up -d --build
+docker compose pull && docker compose up -d
 docker exec mail-backup backup.sh init
 ```
 
@@ -81,7 +94,10 @@ All settings are in `.env`; see `.env.example`. The main ones:
 | `PARK_AFTER` | 2 | stalled attempts in a row before a folder is parked: 2 or 1 |
 | `COPY_TARGET`, `COPY_PORT` | off, 22 | off-host copy, `user@host:path`; the colon is required |
 
-After changing `.env`, run `docker compose up -d`. Values with brackets, quotes or spaces need no quoting (checked
+After changing `.env`, run `docker compose up -d`. To update to the latest image:
+`docker compose pull && docker compose up -d`; with your own build, rebuild it and run `docker compose up -d`.
+Not during a run: a killed mbsync just resumes from its journal, but a killed restic leaves a repository lock, and
+the next runs fail until it is 30 minutes old (or run `docker exec mail-backup restic unlock` once no restic runs). Values with brackets, quotes or spaces need no quoting (checked
 with Compose v5.1); to be sure they arrived as written: `docker exec mail-backup printenv REFUSED_PATTERN`.
 
 ## Refused letters

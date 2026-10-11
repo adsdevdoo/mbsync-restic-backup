@@ -23,6 +23,15 @@ finds nothing. Each finding gets a severity, a concrete failure scenario and a d
 reason) or left for later. Check claims against facts (logs, the mbsync state files, a test run) before fixing a
 "could happen": hypotheses are not bugs.
 
+## CI and images
+
+- `.github/workflows/build.yml`: tests on every push and PR; on `main` and `v*` tags it builds amd64 and arm64 and
+  pushes to `ghcr.io/adsdevdoo/mbsync-restic-backup` and Docker Hub `adsdevdoo/mbsync-restic-backup` (repository
+  variable `DOCKERHUB_USERNAME`, secret `DOCKERHUB_TOKEN`). Tags: full commit SHA, `latest`, `x.y.z`, `x.y`.
+- A new ghcr package starts private: after its first push the org owner sets it to Public (package settings →
+  Change visibility) once.
+- A release is a `vX.Y.Z` tag on a commit of `main` (with the maintainer's OK).
+
 ## Tests
 
 - `sh tests/test.sh` builds the image and runs backup.sh against a stub mbsync. The scenarios run without network

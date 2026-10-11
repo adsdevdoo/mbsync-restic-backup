@@ -1,7 +1,8 @@
 services:
   mail-backup:
-    build: .
-    image: mbsync-restic-backup:local
+    # Published for amd64 and arm64. Set IMAGE in .env to pin a full commit SHA (ghcr.io/…:<sha>) for a deployment
+    # that should change only when you decide, or to an image you built yourself (see README).
+    image: ${IMAGE:-ghcr.io/adsdevdoo/mbsync-restic-backup:latest}
     container_name: mail-backup
     restart: unless-stopped
     env_file: .env
