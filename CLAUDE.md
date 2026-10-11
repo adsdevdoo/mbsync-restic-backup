@@ -27,10 +27,15 @@ reason) or left for later. Check claims against facts (logs, the mbsync state fi
 
 - `.github/workflows/build.yml`: tests on every push and PR; on `main` and `v*` tags it builds amd64 and arm64 and
   pushes to `ghcr.io/adsdevdoo/mbsync-restic-backup` and Docker Hub `adsdevdoo/mbsync-restic-backup` (repository
-  variable `DOCKERHUB_USERNAME`, secret `DOCKERHUB_TOKEN`). Tags: full commit SHA, `latest`, `x.y.z`, `x.y`.
+  variable `DOCKERHUB_USERNAME`, secret `DOCKERHUB_TOKEN`). Tags: `X.Y.Z`, `X.Y`, `X` and `latest` for a release,
+  `edge` for `main`, `sha-<short>` and the full SHA for every build. The Docker Hub description is the README.
 - A new ghcr package starts private: after its first push the org owner sets it to Public (package settings →
   Change visibility) once.
-- A release is a `vX.Y.Z` tag on a commit of `main` (with the maintainer's OK).
+- **A release** (with the maintainer's OK): move the `[Unreleased]` items of `CHANGELOG.md` under a new
+  `## [X.Y.Z] - date` heading and fix the links at the bottom, commit, then tag that commit `vX.Y.Z` and push the
+  tag. CI builds the release images and creates the GitHub Release from that CHANGELOG section (it fails if the
+  section is missing). SemVer: a change users must act on (settings, data layout, metric names) is a new major.
+- Every user-visible change goes into `CHANGELOG.md` under `[Unreleased]` in the same commit.
 
 ## Tests
 

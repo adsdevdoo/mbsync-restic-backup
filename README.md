@@ -6,6 +6,7 @@
 [![Docker pulls](https://img.shields.io/docker/pulls/adsdevdoo/mbsync-restic-backup?logo=docker)](https://hub.docker.com/r/adsdevdoo/mbsync-restic-backup)
 [![image size](https://img.shields.io/docker/image-size/adsdevdoo/mbsync-restic-backup/latest?logo=docker)](https://hub.docker.com/r/adsdevdoo/mbsync-restic-backup)
 ![platforms](https://img.shields.io/badge/platforms-amd64%20%7C%20arm64-lightgrey)
+[![release](https://img.shields.io/github/v/release/adsdevdoo/mbsync-restic-backup?sort=semver)](https://github.com/adsdevdoo/mbsync-restic-backup/releases)
 [![license](https://img.shields.io/github/license/adsdevdoo/mbsync-restic-backup)](LICENSE)
 [![last commit](https://img.shields.io/github/last-commit/adsdevdoo/mbsync-restic-backup)](https://github.com/adsdevdoo/mbsync-restic-backup/commits/main)
 
@@ -23,6 +24,53 @@ Limits: implicit TLS only (port 993, `TLSType IMAPS`) and password login only (`
 143, no OAuth, so it won't work with Microsoft 365 once basic auth is off. For Gmail, exclude `[Gmail]/All Mail`
 (see `EXTRA_PATTERNS`), or the whole mailbox is stored twice.
 
+## Features
+
+- **One-way, nothing lost.** Pull-only sync: the mailbox is never changed, deleted letters stay in the backup.
+- **Snapshots, not a mirror.** restic keeps daily, weekly and monthly snapshots, deduplicated and encrypted.
+- **Survives a flaky server.** Restarts after dropped sessions, keeps a list of letters the server refuses and
+  fetches them again later, parks folders it can't get through so the rest of the mailbox still gets backed up.
+- **Parallel sessions** for slow servers.
+- **Off-host copy** to a second machine over SSH, with a key that can only add files.
+- **Metrics and a Grafana dashboard**, live while a sync runs.
+- **One container**, amd64 and arm64, settings in `.env`.
+
+## Quick start
+
+```sh
+git clone https://github.com/adsdevdoo/mbsync-restic-backup.git && cd mbsync-restic-backup
+cp .env.example .env                 # DATA_DIR, IMAP_HOST, IMAP_USER
+mkdir -p secrets && chmod 700 secrets
+read -rs p && printf '%s' "$p" > secrets/imap_password; unset p
+head -c 32 /dev/urandom | base64 > secrets/restic_password && chmod 600 secrets/*
+mkdir -p /srv/mail-backup            # the DATA_DIR from .env
+docker compose pull && docker compose up -d && docker exec mail-backup backup.sh init
+```
+
+The first backup then runs on the schedule (04:30); to start it now, see [Install](#install). Details, and what
+to save in your password manager, are there too.
+
+## Image tags
+
+Images for `linux/amd64` and `linux/arm64`, the same in both registries:
+
+- `ghcr.io/adsdevdoo/mbsync-restic-backup`
+- [`adsdevdoo/mbsync-restic-backup`](https://hub.docker.com/r/adsdevdoo/mbsync-restic-backup) (Docker Hub)
+
+| Tag | What it is | Use it when |
+|---|---|---|
+| `latest` | the newest release | you want releases, no pinning |
+| `1`, `1.2`, `1.2.3` | the newest `1.x.x`, the newest `1.2.x`, exactly `1.2.3` | `1`: updates without breaking changes; `1.2.3`: nothing changes until you decide |
+| `edge` | the current `main`, not released yet | trying what's coming |
+| `sha-abc1234`, full commit SHA | one exact commit | pinning a deployment to a commit |
+
+`compose.yml` runs `latest`; set `IMAGE` in `.env` to pick another tag, or your own build
+(`docker build -t mbsync-restic-backup:local .`, then `IMAGE=mbsync-restic-backup:local`).
+
+Versions follow [Semantic Versioning](https://semver.org/): a new major version means something you have to act on
+(settings, data layout, metric names). Changes are listed in [CHANGELOG.md](CHANGELOG.md) and on the
+[releases page](https://github.com/adsdevdoo/mbsync-restic-backup/releases).
+
 ## What a run does
 
 1. **Sync.** mbsync downloads new letters from every folder into `DATA_DIR/maildir`. If the server drops the
@@ -39,11 +87,7 @@ The scheduler (supercronic) runs this daily at 04:30 by default. Two runs never 
 
 ## Install
 
-You need Docker with Compose, and a directory for the data. The image is published for amd64 and arm64 as
-`ghcr.io/adsdevdoo/mbsync-restic-backup` and `adsdevdoo/mbsync-restic-backup` (Docker Hub), tagged `latest`,
-by full commit SHA, and by version (`1.2.3`, `1.2`) for releases. `compose.yml` runs `latest`; set `IMAGE` in `.env`
-to pin a commit SHA (a deployment that changes only when you decide) or to your own build
-(`docker build -t mbsync-restic-backup:local .`, then `IMAGE=mbsync-restic-backup:local`).
+You need Docker with Compose, and a directory for the data. Which image tag to run: see [Image tags](#image-tags).
 
 ```sh
 git clone https://github.com/adsdevdoo/mbsync-restic-backup.git
