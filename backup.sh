@@ -148,10 +148,11 @@ on_exit() {
     local rc=$?
 
     # Every end of a run, good or not: with the start (mail_backup_run.prom) a dashboard tells a running backup.
+    # Microseconds, as the start: a loop of runs starts the next one in the same second the last one ended.
     write_prom mail_backup_run_end.prom <<EOF || true
 # HELP mail_backup_run_finished_timestamp_seconds When the last backup run ended (good or not).
 # TYPE mail_backup_run_finished_timestamp_seconds gauge
-mail_backup_run_finished_timestamp_seconds $(date +%s)
+mail_backup_run_finished_timestamp_seconds ${EPOCHREALTIME/,/.}
 EOF
     if (( rc != 0 )); then
         log "ERROR: backup failed (exit code $rc)."
@@ -784,11 +785,12 @@ main() {
     trap on_exit EXIT
     started="$(date +%s)"
     check_settings
-    # The current run's start, for a dashboard showing how long a running backup takes.
+    # The current run's start, for a dashboard showing how long a running backup takes. Microseconds: compared with
+    # the previous run's end, which may fall in the same second.
     write_prom mail_backup_run.prom <<EOF || true
 # HELP mail_backup_run_started_timestamp_seconds When the last (or the running) backup run started.
 # TYPE mail_backup_run_started_timestamp_seconds gauge
-mail_backup_run_started_timestamp_seconds $started
+mail_backup_run_started_timestamp_seconds ${EPOCHREALTIME/,/.}
 EOF
     check_secrets
     check_repository

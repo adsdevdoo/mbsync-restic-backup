@@ -7,6 +7,18 @@ on (settings, data layout, metric names).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-11
+
+### Added
+- README in Russian (`README.ru.md`), a language switch in both, a Grafana dashboard screenshot.
+
+### Changed
+- `docs/yandex-360.md` links to the Russian README sections; small fixes in the README texts.
+
+### Fixed
+- The dashboard showed "idle" during a loop of runs: the next run started in the same second the last one ended,
+  so its start was not later than that end. Run start and end are now written with microseconds.
+
 ## [1.0.0] - 2026-10-11
 
 First release.
@@ -25,5 +37,6 @@ First release.
 - Offline tests (`tests/test.sh`), images for amd64 and arm64 on ghcr.io and Docker Hub.
 - Setup guide for Yandex 360 (`docs/yandex-360.md`, in Russian).
 
-[Unreleased]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/adsdevdoo/mbsync-restic-backup/releases/tag/v1.0.0

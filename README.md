@@ -10,6 +10,8 @@
 [![license](https://img.shields.io/github/license/adsdevdoo/mbsync-restic-backup)](LICENSE)
 [![last commit](https://img.shields.io/github/last-commit/adsdevdoo/mbsync-restic-backup)](https://github.com/adsdevdoo/mbsync-restic-backup/commits/main)
 
+**English** | [Русский](README.ru.md)
+
 Daily backup of one IMAP mailbox, in a single Docker container.
 
 [mbsync](https://isync.sourceforge.io/) pulls every folder into a local Maildir, and
@@ -18,7 +20,11 @@ SSH. The sync is one-way: nothing is written to the server and nothing is delete
 the mailbox stays in the backup.
 
 Built for a Yandex 360 mailbox that kept dropping sessions and refusing letters after its provider lost data
-centers.
+centers. Setting up Yandex 360 for IMAP, step by step with screenshots (in Russian):
+[docs/yandex-360.md](docs/yandex-360.md).
+
+<!-- Absolute URL: this README is also the Docker Hub description, where a relative image path does not load. -->
+![Grafana dashboard: run state, letters, sizes, refused letters, parked folders](https://raw.githubusercontent.com/adsdevdoo/mbsync-restic-backup/main/docs/img/grafana-dashboard.png)
 
 Limits: implicit TLS only (port 993, `TLSType IMAPS`) and password login only (`AuthMechs LOGIN`). No STARTTLS on
 143, no OAuth, so it won't work with Microsoft 365 once basic auth is off. For Gmail, exclude `[Gmail]/All Mail`
@@ -141,8 +147,10 @@ All settings are in `.env`; see `.env.example`. The main ones:
 After changing `.env`, run `docker compose up -d`. To update to the latest image:
 `docker compose pull && docker compose up -d`; with your own build, rebuild it and run `docker compose up -d`.
 Not during a run: a killed mbsync just resumes from its journal, but a killed restic leaves a repository lock, and
-the next runs fail until it is 30 minutes old (or run `docker exec mail-backup restic unlock` once no restic runs). Values with brackets, quotes or spaces need no quoting (checked
-with Compose v5.1); to be sure they arrived as written: `docker exec mail-backup printenv REFUSED_PATTERN`.
+the next runs fail until it is 30 minutes old (or run `docker exec mail-backup restic unlock` once no restic runs).
+
+Values with brackets, quotes or spaces need no quoting (checked with Compose v5.1); to be sure they arrived as
+written: `docker exec mail-backup printenv REFUSED_PATTERN`.
 
 ## Refused letters
 
@@ -305,6 +313,9 @@ organization and the mailbox, app password.
 | `grafana/mail-backup.json` | Grafana dashboard for the metrics |
 | `tests/test.sh` | tests against a stub mbsync, no mailbox needed: `sh tests/test.sh` (Docker; the first build downloads Alpine packages) |
 | `CLAUDE.md` | rules for changing the code, and what we learned about mbsync and Yandex 360 |
+| `README.ru.md` | this README in Russian |
+| `docs/yandex-360.md` | setting up a Yandex 360 mailbox for IMAP, with screenshots (in Russian) |
+| `CHANGELOG.md` | changes by release |
 
 Inside `DATA_DIR`:
 

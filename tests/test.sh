@@ -119,9 +119,16 @@ rm -f "$d/metrics/mail_backup_progress.prom"
 # Also proves the run does not hang waiting for the ticker.
 check "progress ticker during a slow sync"    0 'done:'                               slow    "" "-e PROGRESS_INTERVAL=1"
 if grep -q '^mail_backup_progress_timestamp_seconds [0-9]' "$d/metrics/mail_backup_progress.prom" 2>/dev/null \
-  && grep -q '^mail_backup_run_started_timestamp_seconds [0-9]' "$d/metrics/mail_backup_run.prom" 2>/dev/null \
-  && grep -q '^mail_backup_run_finished_timestamp_seconds [0-9]' "$d/metrics/mail_backup_run_end.prom" 2>/dev/null; then
+  && grep -qE '^mail_backup_run_started_timestamp_seconds [0-9]+\.[0-9]{6}$' "$d/metrics/mail_backup_run.prom" 2>/dev/null \
+  && grep -qE '^mail_backup_run_finished_timestamp_seconds [0-9]+\.[0-9]{6}$' "$d/metrics/mail_backup_run_end.prom" 2>/dev/null; then
   echo "ok   progress and run start written"; else echo "FAIL progress and run start written"; FAILED=$((FAILED + 1)); fi
+# A loop of runs: the next run's start must be later than the last run's end, even within the same second.
+reset; echo refused >"$d/data/scenario"
+if docker run --rm --network none $V "$IMG" sh -c '
+  backup.sh >/dev/null 2>&1; f=$(sed -n "s/^mail_backup_run_finished_timestamp_seconds //p" /metrics/mail_backup_run_end.prom)
+  backup.sh >/dev/null 2>&1; s=$(sed -n "s/^mail_backup_run_started_timestamp_seconds //p" /metrics/mail_backup_run.prom)
+  awk -v s="$s" -v f="$f" "BEGIN { exit !(f != \"\" && s + 0 > f + 0) }"'; then
+  echo "ok   next run starts after the last one ended"; else echo "FAIL next run starts after the last one ended"; FAILED=$((FAILED + 1)); fi
 check "stalled folder gets parked"            0 'parked Bad Box'                      stall   ""
 check "PARK_AFTER=1 parks at the first stall" 0 'parked Bad Box: attempt stalled;;attempt 2 of 3' stall "" "-e PARK_AFTER=1"
 check "PARK_AFTER must be 1 or 2"             1 'PARK_AFTER must be 1 or 2'           refused "" "-e PARK_AFTER=3"
