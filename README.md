@@ -247,10 +247,11 @@ ssh-keyscan -p 22 -t ed25519 backup-host.example > secrets/copy_known_hosts    #
 ssh-keygen -lf secrets/copy_known_hosts     # compare with the fingerprint shown on the target
 ```
 
-With the rrsync line below, use an empty path: `COPY_TARGET=backup@backup-host.example:`. The files then land
-right in the rrsync directory.
+With the rrsync line below, use an empty path: `COPY_TARGET=bkcopy@backup-host.example:` (a user of its own; not
+`backup`, a system user on Debian and Ubuntu). The files then land right in the rrsync directory.
 
-On the target, restrict the key to adding files in one directory, with `rrsync` from the rsync package:
+On the target, restrict the key to adding files in one directory, with `rrsync` (it comes with rsync on Debian and
+Ubuntu and needs python3, which a minimal system may lack; on Alpine `apk add rrsync`):
 
 ```
 restrict,from="10.0.0.5",command="/usr/bin/rrsync -wo -no-del -no-overwrite -munge /srv/mail-backup-copy" ssh-ed25519 AAAA… mail-backup

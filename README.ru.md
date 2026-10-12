@@ -246,10 +246,11 @@ ssh-keyscan -p 22 -t ed25519 backup-host.example > secrets/copy_known_hosts    #
 ssh-keygen -lf secrets/copy_known_hosts     # сверить с отпечатком на самом сервере
 ```
 
-С описанной ниже строкой rrsync путь оставьте пустым: `COPY_TARGET=backup@backup-host.example:`. Файлы тогда лягут
-прямо в каталог rrsync.
+С описанной ниже строкой rrsync путь оставьте пустым: `COPY_TARGET=bkcopy@backup-host.example:` (отдельный
+пользователь; не `backup` — это системный пользователь Debian и Ubuntu). Файлы тогда лягут прямо в каталог rrsync.
 
-На сервере назначения ограничьте ключ добавлением файлов в один каталог — `rrsync` из пакета rsync:
+На сервере назначения ограничьте ключ добавлением файлов в один каталог — `rrsync` (в Debian и Ubuntu он входит в
+пакет rsync и требует python3, которого в минимальной системе может не быть; в Alpine — `apk add rrsync`):
 
 ```
 restrict,from="10.0.0.5",command="/usr/bin/rrsync -wo -no-del -no-overwrite -munge /srv/mail-backup-copy" ssh-ed25519 AAAA… mail-backup
