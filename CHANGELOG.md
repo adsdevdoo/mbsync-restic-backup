@@ -7,6 +7,12 @@ on (settings, data layout, metric names).
 
 ## [Unreleased]
 
+### Fixed
+- README, off-host copy: the rrsync line of the target lacked `-munge`. Without it, on rsync older than 3.5 a
+  compromised backup host can upload a symbolic link, write through it outside the directory (e.g. the user's
+  `~/.ssh`) and get a shell on the target. Now `-wo -no-del -no-overwrite -munge`, or `-wo -no-del -munge` with
+  rsync older than 3.3; add `-munge` to an existing line.
+
 ## [1.1.0] - 2026-10-11
 
 ### Added
