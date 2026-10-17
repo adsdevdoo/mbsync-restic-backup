@@ -95,6 +95,12 @@ Versions follow [Semantic Versioning](https://semver.org/): a new major version 
 
 The scheduler (supercronic) runs this daily at 04:30 by default. Two runs never overlap.
 
+Memory: the retention prune holds the repository index in memory. A mailbox of about a million letters (a 15 GB
+repository) needs more than 1 GB, so `compose.yml` sets `mem_limit: 4g`. A restic killed for lack of memory leaves a
+lock behind; the next run removes such stale locks before its snapshot. restic tells a stale lock by its host name and
+process: don't set `hostname:` for the service, and run restic by hand with `docker exec mail-backup restic …`, so a
+run never takes the lock of a live restic for a stale one.
+
 ## Install
 
 You need Docker with Compose, and a directory for the data. Which image tag to run: see [Image tags](#image-tags).
@@ -150,8 +156,9 @@ All settings are in `.env`; see `.env.example`. The main ones:
 
 After changing `.env`, run `docker compose up -d`. To update to the latest image:
 `docker compose pull && docker compose up -d`; with your own build, rebuild it and run `docker compose up -d`.
-Not during a run: a killed mbsync just resumes from its journal, but a killed restic leaves a repository lock, and
-the next runs fail until it is 30 minutes old (or run `docker exec mail-backup restic unlock` once no restic runs).
+Not during a run: a killed mbsync just resumes from its journal, but a killed restic leaves a repository lock. The
+next run removes it before its snapshot; a lock left in a container since recreated counts as stale only once it is
+30 minutes old, and until then runs fail (or run `docker exec mail-backup restic unlock` once no restic runs).
 
 Values with brackets, quotes or spaces need no quoting (checked with Compose v5.1); to be sure they arrived as
 written: `docker exec mail-backup printenv REFUSED_PATTERN`.

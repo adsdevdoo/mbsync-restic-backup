@@ -7,7 +7,16 @@ on (settings, data layout, metric names).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-17
+
+### Changed
+- `compose.yml`: `mem_limit` 4g instead of 1g. The prune of a mailbox of about a million letters (a 15 GB
+  repository) needed more than 1 GB and was killed.
+
 ### Fixed
+- A restic killed in the middle (out of memory during the retention prune, a container stop) left an exclusive lock
+  behind, and every later run failed with "repository is already locked". Each run now removes stale locks
+  (`restic unlock`, never `--remove-all`) before its snapshot.
 - README, off-host copy: the rrsync line of the target lacked `-munge`. Without it, on rsync older than 3.5 a
   compromised backup host can upload a symbolic link, write through it outside the directory (e.g. the user's
   `~/.ssh`) and get a shell on the target. Now `-wo -no-del -no-overwrite -munge`, or `-wo -no-del -munge` with
@@ -61,7 +70,8 @@ First release.
 - Offline tests (`tests/test.sh`), images for amd64 and arm64 on ghcr.io and Docker Hub.
 - Setup guide for Yandex 360 (`docs/yandex-360.md`, in Russian).
 
-[Unreleased]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/adsdevdoo/mbsync-restic-backup/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/adsdevdoo/mbsync-restic-backup/releases/tag/v1.0.0

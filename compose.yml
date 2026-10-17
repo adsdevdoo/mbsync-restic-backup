@@ -17,7 +17,9 @@ services:
       - ./secrets:/run/secrets:ro
       # Optional: node_exporter textfile collector for the metrics.
       # - /var/lib/node_exporter/textfile:/metrics
-    mem_limit: 1g
+    # restic forget --prune keeps the repository index in memory: a mailbox of about a million letters (a 15 GB
+    # repository) needed more than 1 GB. Too low a limit gets restic killed in the middle of the prune.
+    mem_limit: 4g
     stop_grace_period: 2m
     logging:
       driver: json-file

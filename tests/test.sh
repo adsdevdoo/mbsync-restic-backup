@@ -157,6 +157,18 @@ check "real error fails the run"              1 'mbsync failed'                 
 if grep -q '^mail_backup_letters [0-9]' "$d/metrics/mail_backup_size.prom" 2>/dev/null; then
   echo "ok   sizes written after a failed run"; else echo "FAIL sizes written after a failed run"; FAILED=$((FAILED + 1)); fi
 check "killed mbsync fails the run"           1 'mbsync failed'                       killed  ""
+# A restic killed in the middle leaves its lock behind (same container: a dead process on this host = stale); the next
+# run removes it before the snapshot and goes through.
+reset; echo refused >"$d/data/scenario"
+out=$(docker run --rm --network none $V "$IMG" sh -c '
+  head -c 50000000 /dev/urandom >/data/big; restic backup --quiet --limit-upload 100 /data/big & p=$!
+  for i in $(seq 1 30); do [ "$(restic list locks --no-lock | wc -l)" -gt 0 ] && break; sleep 1; done; kill -9 $p; wait $p 2>/dev/null
+  rm -f /data/big; echo "locks before: $(restic list locks --no-lock | wc -l)"; backup.sh; echo rc=$?' 2>&1)
+if echo "$out" | grep -q 'locks before: [1-9]' && echo "$out" | grep -q 'left by a killed restic' && echo "$out" | grep -q '^rc=0$'; then
+  echo "ok   a stale restic lock is removed before the snapshot"
+else
+  echo "FAIL a stale restic lock is removed before the snapshot"; echo "$out" | grep -vE 'UNAVAILABLE|SERVERBUG' | tail -5; FAILED=$((FAILED + 1))
+fi
 rm -f "$d/metrics/mail_backup_progress.prom"
 # Also proves the run does not hang waiting for the ticker.
 check "progress ticker during a slow sync"    0 'done:'                               slow    "" "-e PROGRESS_INTERVAL=1"

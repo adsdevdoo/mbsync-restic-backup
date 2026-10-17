@@ -905,6 +905,16 @@ EOF
 
 # snapshot <retention: yes|no>
 snapshot() {
+    local out
+
+    # A restic killed earlier (out of memory, a container stop) leaves its lock behind, and an exclusive one (prune)
+    # makes every later run fail. We hold the run lock, so no restic of ours works now; restic unlock removes only
+    # stale locks (an older one or a dead process on this host), not those of a live restic started by hand.
+    if out="$(restic unlock 2>&1)"; then
+        [[ "$out" != *"successfully removed 0 locks"* && -n "$out" ]] && log "restic: $out (left by a killed restic)"
+    else
+        log "restic: unlock failed: $out"
+    fi
     # Always the same paths, even when empty: restic picks the parent snapshot by the exact path set.
     mkdir -p "$GONE_DIR" "$STATE_DIR"
     log "restic: snapshot of $MAILDIR $GONE_DIR $STATE_DIR"
