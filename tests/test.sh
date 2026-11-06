@@ -31,7 +31,7 @@ cat >"$d/bin/mbsync" <<'EOF'
 s=$(cat /data/scenario)
 if [ "$3" = "-l" ]; then
   case $s in
-    parallel) printf 'A\nB\nC\nD\n'; exit 0;;
+    parallel|mixed) printf 'A\nB\nC\nD\n'; exit 0;;
     folders) printf 'INBOX\nжурналы\narchive/x\na&b\n'; exit 0;;
     *) exit 1;;
   esac
@@ -90,6 +90,43 @@ case $s in
       echo "IMAP error: unexpected BYE response: session lifetime exceeded" >&2; sum; exit 1
     fi
     echo "STATE $(tr '\n' ' ' </data/maildir/INBOX/.mbsyncstate)"; echo "LISTED $(tr '\t\n' ' ;' </data/state/unfetchable.tsv)"; sum; exit 0;;
+  noconnect)
+    # No answer from the server, as isync 1.5.1 words it: attempt 1 the connect timeout (musl: "Operation timed out"),
+    # attempt 2 a DNS failure, attempt 3 works. No Channels summary, nothing opened.
+    n=$(cat /tmp/n 2>/dev/null || echo 0); echo $((n + 1)) >/tmp/n
+    case $n in
+      0) echo "Cannot connect to imap.example (192.0.2.1:993): Operation timed out" >&2
+         echo "No working address found for imap.example" >&2; exit 1;;
+      1) echo "Error: Cannot resolve server 'imap.example': Temporary failure in name resolution" >&2; exit 1;;
+    esac
+    box INBOX; sum; exit 0;;
+  noconnect-down)
+    echo "Cannot connect to imap.example (192.0.2.1:993): Operation timed out" >&2
+    echo "No working address found for imap.example" >&2; exit 1;;
+  deadaddr-bye)
+    # isync prints "Cannot connect to <address>" for each address it fails on and goes on to the next: this session
+    # connects on the second one and is then cut off by a BYE (a dropped connection, not a missing one).
+    if [ ! -f /tmp/second ]; then
+      touch /tmp/second
+      echo "Cannot connect to imap.example ([2001:db8::1]:993): Network unreachable" >&2
+      box INBOX; echo "IMAP error: unexpected BYE response: session lifetime exceeded" >&2; sum; exit 1
+    fi
+    box Other; sum; exit 0;;
+  deadaddr-login)
+    # The same, and then the server refuses the login: a real error, not a missing connection.
+    echo "Cannot connect to imap.example ([2001:db8::1]:993): Network unreachable" >&2
+    echo "IMAP command 'LOGIN <user> <pass>' returned an error: NO [AUTHENTICATIONFAILED] Invalid credentials" >&2; exit 1;;
+  mixed)
+    # Two sessions. The one with A cannot connect the first time; the one with B fails on a real error.
+    if [[ "$pat" == *'"A"'* ]]; then
+      if [ ! -f /tmp/a-tried ]; then
+        touch /tmp/a-tried
+        echo "Cannot connect to imap.example (192.0.2.1:993): Operation timed out" >&2
+        echo "No working address found for imap.example" >&2; exit 1
+      fi
+      box A; box C; echo "SESSION $pat"; sum; exit 0
+    fi
+    box B; echo "Error: channel mail: near side box B cannot be opened" >&2; sum; exit 1;;
   folders) box INBOX; box журналы; box archive/x; box 'a&b'; touch '/data/maildir/журналы/cur/1:2,S'; sum; exit 0;;
   parallel)
     # Sync the folders named in Patterns; B has refused letters; the session with C drops once.
@@ -156,6 +193,27 @@ check "dropped session, second attempt ok"    0 'attempt 2 of 3'                
 check "real error fails the run"              1 'mbsync failed'                       realerr ""
 if grep -q '^mail_backup_letters [0-9]' "$d/metrics/mail_backup_size.prom" 2>/dev/null; then
   echo "ok   sizes written after a failed run"; else echo "FAIL sizes written after a failed run"; FAILED=$((FAILED + 1)); fi
+# No answer from the server (a timeout, then a DNS failure): the session starts again after CONNECT_RETRY_WAIT.
+check "no connection, third attempt ok"       0 'attempt 2 of 3;;attempt 3 of 3;;the server did not answer; next attempt in 1 s;;all folders done' noconnect "" "-e CONNECT_RETRY_WAIT=1"
+# Never connects: all attempts are used, there is no wait after the last one, the run fails.
+check "server never answers fails the run"    1 'attempt 3 of 3;;mbsync failed'       noconnect-down "" "-e CONNECT_RETRY_WAIT=1"
+if [ "$(echo "$out" | grep -c 'the server did not answer')" -eq 2 ]; then
+  echo "ok   no wait after the last attempt"; else echo "FAIL no wait after the last attempt"; FAILED=$((FAILED + 1)); fi
+check "CONNECT_RETRY_WAIT=0 does not wait"    1 'attempt 3 of 3;;mbsync failed'       noconnect-down "" "-e CONNECT_RETRY_WAIT=0"
+if ! echo "$out" | grep -q 'the server did not answer'; then
+  echo "ok   no wait message with CONNECT_RETRY_WAIT=0"; else echo "FAIL no wait message with CONNECT_RETRY_WAIT=0"; FAILED=$((FAILED + 1)); fi
+check "CONNECT_RETRY_WAIT must be a number"   1 'CONNECT_RETRY_WAIT must be a number' refused "" "-e CONNECT_RETRY_WAIT=x"
+# Only the session that could not connect is started again; the one with a real error is not.
+check "no answer in one session, error in the other" 1 '1 of 2 sessions;;next attempt in 1 s;;mbsync failed' mixed "" "-e PARALLEL=2 -e CONNECT_RETRY_WAIT=1"
+if [ "$(echo "$out" | grep -c 'attempt [0-9] of 3, 1 of 2 sessions')" -eq 1 ] && ! echo "$out" | grep -q 'attempt 3 of 3'; then
+  echo "ok   a real error in one session is not retried"; else echo "FAIL a real error in one session is not retried"; echo "$out" | tail -8; FAILED=$((FAILED + 1)); fi
+# A dead first address is not "no connection": the session that got past it is judged by what it did afterwards.
+check "dead first address, then a BYE"        0 'attempt 2 of 3;;all folders done'    deadaddr-bye "" "-e CONNECT_RETRY_WAIT=1"
+if ! echo "$out" | grep -q 'the server did not answer'; then
+  echo "ok   a dead first address does not add the wait to a dropped connection"; else echo "FAIL a dead first address does not add the wait to a dropped connection"; FAILED=$((FAILED + 1)); fi
+check "dead first address, then a real error" 1 'attempt 1 of 3;;mbsync failed'       deadaddr-login "" "-e CONNECT_RETRY_WAIT=1"
+if ! echo "$out" | grep -qE 'attempt 2 of 3|the server did not answer'; then
+  echo "ok   a real error after a dead first address is not retried"; else echo "FAIL a real error after a dead first address is not retried"; FAILED=$((FAILED + 1)); fi
 check "killed mbsync fails the run"           1 'mbsync failed'                       killed  ""
 # A restic killed in the middle leaves its lock behind (same container: a dead process on this host = stale); the next
 # run removes it before the snapshot and goes through.

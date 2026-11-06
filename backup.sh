@@ -19,6 +19,10 @@
 # lifetime exceeded"). After a dropped connection mbsync is started again, up to MBSYNC_ATTEMPTS times per run; it
 # continues where it stopped.
 #
+# No answer from the server. A session that could not connect at all (timeout, refusal, no route, DNS) is started
+# again too, after CONNECT_RETRY_WAIT seconds: an outage of a few minutes must not cost the night. Nothing was cut
+# off then, so there is no checkpoint to write.
+#
 # Parallel sessions. With PARALLEL > 1 the folders the server lists (parked ones left out) are dealt round-robin into
 # that many groups, each synced by its own mbsync at the same time. A folder belongs to one group only, so no two
 # processes touch the same folder state. A server answering one connection's commands in order (refusals ~0.8 s
@@ -53,6 +57,8 @@ IMAP_PORT="${IMAP_PORT:-993}"
 IMAP_PASSWORD_FILE="${IMAP_PASSWORD_FILE:-/run/secrets/imap_password}"
 PIPELINE_DEPTH="${PIPELINE_DEPTH:-8}"
 MBSYNC_ATTEMPTS="${MBSYNC_ATTEMPTS:-3}"
+# Seconds to wait before the next attempt when a session could not connect to the server (0 = no wait).
+CONNECT_RETRY_WAIT="${CONNECT_RETRY_WAIT:-120}"
 KEEP_DAILY="${KEEP_DAILY:-30}"
 KEEP_WEEKLY="${KEEP_WEEKLY:-8}"
 KEEP_MONTHLY="${KEEP_MONTHLY:-24}"
@@ -131,6 +137,11 @@ UNFETCHABLE_WARNING='^Warning from IMAP server: .*UID FETCH'
 MBSYNC_ERROR='error|bye|fail|cannot|refused|timed out|reset|denied|invalid'
 # Drops worth another attempt.
 CONNECTION_DROP='unexpected BYE response|Connection reset by peer|Socket error|Connection timed out'
+# No connection at all, as isync 1.5.1 words it: the name did not resolve, or every address failed. Not the
+# "Cannot connect to <address>: <error>" lines: isync prints one for each address it fails on and goes on to the next,
+# so a session that did connect can have them in its log (and the error text differs by libc: "Operation timed out"
+# on musl, the Alpine of this image, "Connection timed out" on glibc). "No working address found" comes after the last.
+CONNECT_FAIL='Cannot resolve server |No working address found'
 
 
 log() {
@@ -195,7 +206,7 @@ check_settings() {
             exit 1
         fi
     done
-    for v in IMAP_PORT PIPELINE_DEPTH MBSYNC_ATTEMPTS KEEP_DAILY KEEP_WEEKLY KEEP_MONTHLY PARK_FAILURES PARK_RATIO PARK_AFTER PARALLEL PROGRESS_INTERVAL REFUSED_MAX COPY_PORT; do
+    for v in IMAP_PORT PIPELINE_DEPTH MBSYNC_ATTEMPTS CONNECT_RETRY_WAIT KEEP_DAILY KEEP_WEEKLY KEEP_MONTHLY PARK_FAILURES PARK_RATIO PARK_AFTER PARALLEL PROGRESS_INTERVAL REFUSED_MAX COPY_PORT; do
         # No leading zeros: bash arithmetic would read 08 as octal.
         if [[ ! "${!v}" =~ ^(0|[1-9][0-9]*)$ ]]; then
             log "ERROR: $v must be a number, got '${!v}'."
@@ -236,10 +247,11 @@ check_repository() {
 
 # sync_mail : 0 when mbsync went through every folder (refused letters aside), 1 otherwise (the snapshot is taken
 # either way). The folders are split into PARALLEL groups, one mbsync session each, run at the same time; after a
-# dropped connection only the unfinished groups run again. A failure in keeping the lists is logged but does not
-# decide the run.
+# dropped connection (or a session that could not connect) only the unfinished groups run again. A failure in keeping
+# the lists is logged but does not decide the run. The folder list is taken once, before the first attempt: with the
+# server down then, the run uses one session for all folders.
 sync_mail() {
-    local attempt i n f glog more ticker="" state=() pids=()
+    local attempt i n f glog more no_answer connect_failed ticker="" state=() pids=()
 
     mkdir -p "$MAILDIR" "$STATE_DIR"
     # Leftovers of a killed run (the lock is ours).
@@ -274,6 +286,7 @@ sync_mail() {
         pids=()
 
         more=no
+        no_answer=no
         for (( i = 0; i < n; i++ )); do
             [[ -z "${state[i]:-}" ]] || continue
             glog="$MBSYNC_LOG.g$i"
@@ -287,7 +300,13 @@ sync_mail() {
                 done < <(gawk '/^Opening far side box / { b = $0; sub(/^Opening far side box /, "", b); sub(/\.\.\.$/, "", b); print b }' "$glog" | sort -u)
                 continue
             fi
-            # Only a dropped connection is worth another attempt; any other error would just repeat.
+            connect_failed=no
+            if grep -qE "$CONNECT_FAIL" "$glog"; then
+                connect_failed=yes
+                no_answer=yes
+            fi
+            # Only a dropped connection or no connection at all is worth another attempt; any other error would just
+            # repeat.
             if grep -qE "$CONNECTION_DROP" "$glog"; then
                 more=yes
                 # The folder it was cut off in: a checkpoint, so the next attempt goes on from there; parking only
@@ -298,12 +317,19 @@ sync_mail() {
                 else
                     check_stall "$glog" || log "ERROR: could not check session $((i + 1)) for a stalled folder."
                 fi
+            elif [[ "$connect_failed" == yes ]]; then
+                # Nothing was cut off: no folder was opened, so there is no checkpoint and nothing to park.
+                more=yes
             else
                 state[i]=failed
             fi
         done
         write_sizes
         [[ "$more" == yes ]] || break
+        if [[ "$no_answer" == yes ]] && (( attempt < MBSYNC_ATTEMPTS && CONNECT_RETRY_WAIT > 0 )); then
+            log "mbsync: the server did not answer; next attempt in $CONNECT_RETRY_WAIT s"
+            sleep "$CONNECT_RETRY_WAIT"
+        fi
     done
     if [[ -n "$ticker" ]]; then
         # Its sleep first: an orphaned sleep would hold the run's output open for up to PROGRESS_INTERVAL.

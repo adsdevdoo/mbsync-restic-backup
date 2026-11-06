@@ -7,6 +7,18 @@ on (settings, data layout, metric names).
 
 ## [Unreleased]
 
+### Added
+- `CONNECT_RETRY_WAIT` (120 s by default, 0 = no wait): how long to wait before the next attempt when a session
+  could not connect to the server.
+
+### Fixed
+- A run failed at once when the server did not answer at all (a connect timeout, a refusal, no route, a DNS error),
+  with attempts left, and the failure stayed until the next night's run. Only dropped connections were tried again,
+  and a failed connect is not one: mbsync says "Cannot connect to <address>: Operation timed out" (musl, the Alpine
+  of the image; glibc says "Connection timed out"), then "No working address found". Such a session (also "Cannot
+  resolve server") is now started again, up to `MBSYNC_ATTEMPTS` times per run, after `CONNECT_RETRY_WAIT` seconds.
+  A session with any other error is still not repeated, also when it got past a dead first address.
+
 ## [1.1.1] - 2026-10-17
 
 ### Changed

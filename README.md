@@ -84,7 +84,8 @@ Versions follow [Semantic Versioning](https://semver.org/): a new major version 
    per-folder metrics.
 2. **Sync.** mbsync downloads new letters from every folder into `DATA_DIR/maildir`. If the server drops the
    connection, mbsync is started again, up to 3 times per run, and continues where it stopped (see
-   [Big folders](#big-folders)). With `PARALLEL=N`
+   [Big folders](#big-folders)). A session that cannot connect at all (a timeout, no route, a DNS error) is started
+   again too, after `CONNECT_RETRY_WAIT` seconds. With `PARALLEL=N`
    the folders are split into N groups, one session each, all at the same time; useful when the server is slow to
    answer (each session has its own queue). Servers limit simultaneous IMAP connections (Gmail allows 15; Yandex
    doesn't publish its limit): start with 2.
@@ -146,7 +147,8 @@ All settings are in `.env`; see `.env.example`. The main ones:
 | `PARALLEL` | 1 | mbsync sessions at the same time, each on its own share of the folders (1-8) |
 | `PROGRESS_INTERVAL` | 60 | while mbsync runs, write letters and sizes every N seconds (0 = after each attempt only) |
 | `PIPELINE_DEPTH` | 8 | IMAP commands in flight |
-| `MBSYNC_ATTEMPTS` | 3 | mbsync restarts per run after a dropped connection |
+| `MBSYNC_ATTEMPTS` | 3 | mbsync restarts per run after a dropped connection, or after a session that could not connect at all |
+| `CONNECT_RETRY_WAIT` | 120 | seconds to wait before the next attempt when a session could not connect to the server (0 = no wait) |
 | `REFUSED_PATTERN` | any text | which server answers to a letter fetch count as a refused letter (regex) |
 | `REFUSED_MAX` | 1000 | more refused letters in one attempt fail the run; 0 = no limit |
 | `EXTRA_PATTERNS` | — | extra mbsync patterns, e.g. `!"[Gmail]/All Mail"` |
